@@ -1,13 +1,13 @@
 {
   "name": "ethics_bowl_electron",
-"version": "1.0.0",
-  "description": "Ethics Bowl Match Interface",
+  "version": "1.0.0",
+  "description": "Local Ethics Bowl match app",
   "main": "main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
+    "pack": "electron-builder --dir --publish never",
+    "dist": "electron-builder --publish never",
     "dist:linux": "electron-builder --linux AppImage",
     "dist:win": "electron-builder --win nsis portable",
     "dist:mac": "electron-builder --mac dmg zip"
