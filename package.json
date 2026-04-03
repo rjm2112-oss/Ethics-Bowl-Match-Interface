@@ -1,0 +1,41 @@
+{
+  "name": "ethics_bowl_electron",
+"version": "1.0.0",
+  "description": "Ethics Bowl Match Interface",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux AppImage",
+    "dist:win": "electron-builder --win nsis portable",
+    "dist:mac": "electron-builder --mac dmg zip"
+  },
+  "devDependencies": {
+    "electron": "^37.1.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "local.ethicsbowl.match",
+    "productName": "Ethics Bowl Match",
+    "files": [
+      "main.js",
+      "debater.html",
+      "debater.js",
+      "instructions.html",
+      "styles.css"
+    ],
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Education"
+    },
+    "win": {
+      "target": ["nsis", "portable"]
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.education"
+    }
+  }
+}

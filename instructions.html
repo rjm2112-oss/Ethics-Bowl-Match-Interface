@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Model Instructions</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="config-shell">
+    <header class="page-head">
+      <div>
+        <div
+          class="eyebrow"
+          data-i18n-en="Separate settings page"
+          data-i18n-fr="Page de réglages séparée"
+        >
+          Separate settings page
+        </div>
+        <h1 data-i18n-en="Model Instructions" data-i18n-fr="Instructions du modèle">
+          Model Instructions
+        </h1>
+        <p
+          class="hero-copy"
+          data-i18n-en="Extra instructions that are separate from the default behavior and separate from the hardcoded debate rules."
+          data-i18n-fr="Des instructions supplémentaires séparées du comportement par défaut et des règles intégrées du débat."
+        >
+          Extra instructions that are separate from the default behavior and separate from the hardcoded debate rules.
+        </p>
+      </div>
+
+      <div class="page-links">
+        <a
+          id="backLink"
+          class="back-link"
+          href="debater.html"
+          data-i18n-en="Back to Debater"
+          data-i18n-fr="Retour à l’interface du débat"
+        >
+          Back to Debater
+        </a>
+
+        <a
+          id="instructionsLocaleToggleBtn"
+          class="nav-btn"
+          href="instructions.html?lang=fr-ca"
+        >
+          Français
+        </a>
+      </div>
+    </header>
+
+    <div class="editor-topline">
+      <div id="activeBadge" class="status-chip inactive">Inactive</div>
+      <div id="charCount" class="status-chip subtle">0 characters</div>
+    </div>
+
+    <div
+      id="saveState"
+      class="small-note"
+      data-i18n-en="Saved locally in this browser."
+      data-i18n-fr="Enregistré localement dans ce navigateur."
+    >
+      Saved locally in this browser.
+    </div>
+
+    <section class="editor-card" style="margin-top:14px;">
+      <textarea id="instructionsBox" class="big-editor"></textarea>
+
+      <div class="editor-actions" style="margin-top:14px;">
+        <button
+          id="clearBtn"
+          type="button"
+          class="ghost-btn"
+          data-i18n-en="Clear"
+          data-i18n-fr="Effacer"
+        >
+          Clear
+        </button>
+
+        <button
+          id="saveBtn"
+          type="button"
+          class="primary-btn"
+          data-i18n-en="Save Instructions"
+          data-i18n-fr="Enregistrer les instructions"
+        >
+          Save Instructions
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "debate.instructions";
+    const LOCALE_STORAGE_KEY = "ethics.match.locale";
+
+    const editor = document.getElementById("instructionsBox");
+    const activeBadge = document.getElementById("activeBadge");
+    const charCount = document.getElementById("charCount");
+    const saveState = document.getElementById("saveState");
+    const backLink = document.getElementById("backLink");
+    const localeToggleBtn = document.getElementById("instructionsLocaleToggleBtn");
+
+    function normalizeLocale(value) {
+      const v = String(value || "").trim().toLowerCase().replace(/_/g, "-");
+      return v.startsWith("fr") ? "fr-ca" : "en";
+    }
+
+    let locale = normalizeLocale(
+      new URLSearchParams(window.location.search).get("lang") ||
+      localStorage.getItem(LOCALE_STORAGE_KEY) ||
+      document.documentElement.lang ||
+      navigator.language
+    );
+
+    function isFrenchLocale() {
+      return locale === "fr-ca";
+    }
+
+    function l(en, fr) {
+      return isFrenchLocale() ? fr : en;
+    }
+
+    function localizedHref(path, lang = locale) {
+      const url = new URL(path, window.location.href);
+      url.searchParams.set("lang", lang);
+      return url.toString();
+    }
+
+    function applyStaticTranslations(root = document) {
+      root.querySelectorAll("[data-i18n-en][data-i18n-fr]").forEach((el) => {
+        el.textContent = isFrenchLocale() ? el.dataset.i18nFr : el.dataset.i18nEn;
+      });
+    }
+
+    function applyLocale() {
+      localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+      document.documentElement.lang = isFrenchLocale() ? "fr-CA" : "en";
+      document.title = l("Model Instructions", "Instructions du modèle");
+      applyStaticTranslations();
+      backLink.href = localizedHref("debater.html", locale);
+      localeToggleBtn.textContent = isFrenchLocale() ? "English" : "French";
+      localeToggleBtn.href = localizedHref("instructions.html", isFrenchLocale() ? "en" : "fr-ca");
+      updateMeta();
+    }
+
+    function updateMeta() {
+      const value = editor.value || "";
+      const active = value.trim().length > 0;
+      activeBadge.textContent = active ? l("Active", "Actif") : l("Inactive", "Inactif");
+      activeBadge.className = `status-chip ${active ? "active" : "inactive"}`;
+      charCount.textContent = l(`${value.length} characters`, `${value.length} caractères`);
+    }
+
+    function loadValue() {
+      editor.value = localStorage.getItem(STORAGE_KEY) || "";
+      updateMeta();
+    }
+
+    document.getElementById("saveBtn").addEventListener("click", () => {
+      const value = editor.value.trim();
+      if (value) {
+        localStorage.setItem(STORAGE_KEY, value);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      saveState.textContent = l("Saved.", "Enregistré.");
+      updateMeta();
+    });
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      editor.value = "";
+      localStorage.removeItem(STORAGE_KEY);
+      saveState.textContent = l("Cleared.", "Effacé.");
+      updateMeta();
+    });
+
+    editor.addEventListener("input", () => {
+      saveState.textContent = l("Unsaved changes", "Modifications non enregistrées");
+      updateMeta();
+    });
+
+    window.addEventListener("storage", () => {
+      locale = normalizeLocale(
+        new URLSearchParams(window.location.search).get("lang") ||
+        localStorage.getItem(LOCALE_STORAGE_KEY) ||
+        document.documentElement.lang ||
+        navigator.language
+      );
+      applyLocale();
+      loadValue();
+    });
+
+    window.addEventListener("focus", () => {
+      locale = normalizeLocale(
+        new URLSearchParams(window.location.search).get("lang") ||
+        localStorage.getItem(LOCALE_STORAGE_KEY) ||
+        document.documentElement.lang ||
+        navigator.language
+      );
+      applyLocale();
+      loadValue();
+    });
+
+    applyLocale();
+    loadValue();
+  </script>
+</body>
+</html>
