@@ -12,6 +12,7 @@ const OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
 
 const AVAILABLE_MATCH_MODELS = Object.freeze([
     { value: "gpt-5.4", label: "gpt-5" },
+    { value: "gpt-4.1", label: "gpt-4" },
     { value: "gpt-5.4-mini", label: "gpt-5-mini" },
     { value: "gpt-5.4-nano", label: "gpt-5-nano" }
 ]);
@@ -3877,7 +3878,6 @@ function buildAiTurnPrompt(phase) {
         `Current phase: ${phase.title}`,
         phaseInstruction,
         targetWords,
-        "Before finalizing internally, check the approximate word count and keep the draft inside the target range.",
         "Output plain text only."
     ].filter(Boolean).join("\n\n");
 }
@@ -3893,16 +3893,16 @@ function buildAiTurnRevisionPrompt(phase, draftText, revisionNumber, totalRevisi
         : `Target about ${wordPlan.targetWordCount} words.`,
         `Allowed revision window for this pass: ${wordPlan.allowedMin}-${wordPlan.allowedMax} words.`,
         `Hard cap: ${wordPlan.hardMax} words.`,
-        "Before finalizing internally, check the approximate word count and adjust so the final draft lands inside the allowed revision window."
+        "You must hit the word target exactly.",
     ].join("\n") : "";
 
     return [
         `You are revising a draft for ${phase.title}.`,
         buildAiTurnPrompt(phase),
         wordCountSection,
-        `Current draft:\n${clipText(draft, 5000)}`,
+        `Current draft:\n${clipText(draft, 15000)}`,
         `Revision pass ${revisionNumber} of ${totalRevisions}.`,
-        "Improve or rewrite the draft so it is clearer, tighter, more philosophically rigorous, more directly responsive, and better suited for spoken delivery within the allotted time.",
+        "Improve or rewrite the draft so it is clearer, more philosophically rigorous, more directly responsive.",
         "Keep the speaker as a single participant rather than a team.",
         "Do not mention that this text is revised.",
         "Do not mention the word count.",
@@ -3938,9 +3938,9 @@ async function enforcePhaseWordCount(phase, draftText, options = {}) {
             `Target about ${targetWordCount} words.`,
             `Required final range: ${guidance.min}-${guidance.max} words.`
         ].join("\n"),
-        "Preserve the substance, order, and core position where possible.",
         "Do not mention the word count.",
-        `Current draft:\n${clipText(draft, 5000)}`,
+        "You must hit the word target exactly.",
+        `Current draft:\n${clipText(draft, 15000)}`,
         "Output plain text only."
     ].join("\n\n");
     const repaired = sanitizeText(await callOpenAI({
