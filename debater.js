@@ -29,7 +29,7 @@ Authoritative scoring instructions:
 - If a lower-band requirement is missing, do not award a higher-band score in that criterion even if some higher-band qualities appear.
 - Participants may address rubric elements in any order; score the substance, not the order.
 - Within a score band, assign the lower number for weaker or more minimal evidence and the higher number for stronger or more consistent evidence.
--Be harsh and exacting if determining a numerical score.
+-Be exact with numerical score. A perfect score for a criterion is quite rare.
 
 On the case the participant led:
 
@@ -167,6 +167,7 @@ ANY AI-CONTROLLED PARTICIPANT STYLE:
 - Never claim to be a team.
 - Be concise, charitable, serious, and directly responsive.
 - You are a single opponent, not a team. You must never speak as "we," "our team," or in any collective team voice.
+- Do not refer to the other participant as he or she, only use the other participant's exact name when referring to them.
 
 ANY AI-CONTROLLED PARTICIPANT:
 You are scored on respectful Dialogue across the full match (0-5):
@@ -1178,8 +1179,8 @@ function getPhaseWordGuidance(phase) {
             return {
                 min: 625,
                 max: 650,
-                preferredTarget: 645,
-                revisionTolerance: 20,
+                preferredTarget: 635,
+                revisionTolerance: 100,
                 label: "625-650 words"
             };
         }
@@ -1209,11 +1210,11 @@ function getPhaseWordGuidance(phase) {
 
     if (phase.kind === "speech" && phase.subtype === "presentation") {
         return {
-            min: 650,
+            min: 645,
             max: 670,
-            preferredTarget: 665,
-            revisionTolerance: 200,
-            label: "650-670 words"
+            preferredTarget: 660,
+            revisionTolerance: 100,
+            label: "645-670 words"
         };
     }
 
