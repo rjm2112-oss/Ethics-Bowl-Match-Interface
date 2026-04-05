@@ -2542,7 +2542,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
     let trackedPromise = null;
     trackedPromise = (async () => {
         try {
-            const maxTokens = phase.kind === "judgeAnswer" ? 1000 : phase.subtype === "presentation" ? 1200 : 800;
+            const maxTokens = phase.kind === "judgeAnswer" ? 1500 : phase.subtype === "presentation" ? 2000 : 2000;
             const boundJudgeQuestion = phase.kind === "judgeAnswer" ? getJudgeQuestionForAnswerPhase(phase) : "";
             if (phase.kind === "judgeAnswer" && !boundJudgeQuestion) {
                 throw new Error(isFrenchLocale()
@@ -3947,7 +3947,7 @@ async function enforcePhaseWordCount(phase, draftText, options = {}) {
         model: getParticipantModel(phase.speaker),
                                                    systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                    userPrompt: prompt,
-                                                   maxTokens: phase.kind === "judgeAnswer" ? 1200 : phase.subtype === "presentation" ? 2000 : 1200,
+                                                   maxTokens: phase.kind === "judgeAnswer" ? 1200 : phase.subtype === "presentation" ? 2000 : 2000,
                                                    reasoningEffort: "low"
     }));
     return pickBetterWordCountDraft(draft, repaired, targetWordCount, allowedMin, allowedMax);
