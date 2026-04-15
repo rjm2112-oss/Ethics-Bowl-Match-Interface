@@ -6,6 +6,13 @@ const STORAGE_KEYS = {
     activeApiKeyId: "ethics.match.activeApiKeyId"
 };
 
+const LOGO_CANDIDATES = Object.freeze([
+    "ethics-bowl-logo.png",
+    "ethicsbowl-logo.png",
+    "ethics_bowl_logo.png",
+    "logo.png"
+]);
+
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions";
 const OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
@@ -287,6 +294,45 @@ function localizedHref(path, locale = activeLocale) {
     return url.toString();
 }
 
+function initSiteLogo() {
+    const logoEls = Array.from(document.querySelectorAll("[data-logo-slot]"));
+    const fallbackEls = Array.from(document.querySelectorAll("[data-logo-fallback]"));
+    if (!logoEls.length) return;
+
+    let index = 0;
+
+    const showFallbacks = () => {
+        logoEls.forEach((el) => { el.hidden = true; });
+        fallbackEls.forEach((el) => { el.hidden = false; });
+    };
+
+    const showLogos = (candidate) => {
+        logoEls.forEach((el) => {
+            el.src = candidate;
+            el.hidden = false;
+        });
+        fallbackEls.forEach((el) => { el.hidden = true; });
+    };
+
+    const tryNext = () => {
+        if (index >= LOGO_CANDIDATES.length) {
+            showFallbacks();
+            return;
+        }
+
+        const candidate = LOGO_CANDIDATES[index];
+        const probe = new Image();
+        probe.onload = () => showLogos(candidate);
+        probe.onerror = () => {
+            index += 1;
+            tryNext();
+        };
+        probe.src = candidate;
+    };
+
+    tryNext();
+}
+
 function applyStaticTranslations(root = document) {
     root.querySelectorAll("[data-i18n-en][data-i18n-fr]").forEach((el) => {
         el.textContent = isFrenchLocale() ? el.dataset.i18nFr : el.dataset.i18nEn;
@@ -308,9 +354,13 @@ function localeDirectiveForModels() {
 const chatEl = document.getElementById("chat");
 const emptyStateEl = document.getElementById("emptyState");
 const statusLineEl = document.getElementById("statusLine");
+const appHeroEl = document.getElementById("appHero");
+const appStatusStripEl = document.getElementById("appStatusStrip");
 const instructionsBadgeEl = document.getElementById("instructionsBadge");
 const instructionsLinkEl = document.getElementById("instructionsLink");
 const localeToggleBtnEl = document.getElementById("localeToggleBtn");
+const setupScreenEl = document.getElementById("setupScreen");
+const matchScreenEl = document.getElementById("matchScreen");
 
 const participantOneTypeSelectEl = document.getElementById("participantOneTypeSelect");
 const participantOneModelWrapEl = document.getElementById("participantOneModelWrap");
@@ -334,9 +384,14 @@ const case2FileInputEl = document.getElementById("case2FileInput");
 
 const startMatchBtnEl = document.getElementById("startMatchBtn");
 const resetMatchBtnEl = document.getElementById("resetMatchBtn");
+const newMatchBtnEl = document.getElementById("newMatchBtn");
 const nextActionBtnEl = document.getElementById("nextActionBtn");
 
 const coinChoicePanelEl = document.getElementById("coinChoicePanel");
+const coinTossCardEl = document.getElementById("coinTossCard");
+const coinTossStatusEl = document.getElementById("coinTossStatus");
+const coinTossAnimationEl = document.getElementById("coinTossAnimation");
+const coinTossCoinEl = document.getElementById("coinTossCoin");
 const leadBtnEl = document.getElementById("leadBtn");
 const passBtnEl = document.getElementById("passBtn");
 
@@ -357,12 +412,24 @@ const micBtnEl = document.getElementById("micBtn");
 const liveVoiceWrapEl = document.getElementById("liveVoiceWrap");
 const liveVoicePreviewEl = document.getElementById("liveVoicePreview");
 
+const judgePanelDefaultEl = document.getElementById("judgePanelDefault");
 const aiJudgePanelEl = document.getElementById("aiJudgePanel");
 const humanJudgePanelEl = document.getElementById("humanJudgePanel");
 const computeHumanResultBtnEl = document.getElementById("computeHumanResultBtn");
 
 const scoreSummaryEl = document.getElementById("scoreSummary");
 const scoreCardsEl = document.getElementById("scoreCards");
+const matchSetupSummaryEl = document.getElementById("matchSetupSummary");
+const matchCase1CardEl = document.getElementById("matchCase1Card");
+const matchCase1SummaryEl = document.getElementById("matchCase1Summary");
+const matchCase1MetaEl = document.getElementById("matchCase1Meta");
+const matchCase1QuestionEl = document.getElementById("matchCase1Question");
+const matchCase1TextEl = document.getElementById("matchCase1Text");
+const matchCase2CardEl = document.getElementById("matchCase2Card");
+const matchCase2SummaryEl = document.getElementById("matchCase2Summary");
+const matchCase2MetaEl = document.getElementById("matchCase2Meta");
+const matchCase2QuestionEl = document.getElementById("matchCase2Question");
+const matchCase2TextEl = document.getElementById("matchCase2Text");
 
 const judgeInputs = [1, 2, 3].map((n) => ({
     number: n,
@@ -399,9 +466,14 @@ const state = {
     phases: [],
     currentPhaseIndex: -1,
     busy: false,
+    liveScreenActive: false,
     started: false,
     completed: false,
     waitingForCoinChoice: false,
+    showCoinTossCeremony: false,
+    coinTossAnimating: false,
+    coinCall: "",
+    coinResult: "",
     coinWinner: "",
     phaseReady: false,
     phaseAwaitingPlaybackForId: "",
@@ -481,10 +553,11 @@ const state = {
         speechProgressReadTo: 0,
         speechProgressSpeakStart: 0,
         speechProgressSpeakEnd: 0,
-        speechFollowRaf: null,
-        speechFollowWantsSmooth: false,
-        speechChunkCounts: new Map(),
-        speechCompletionCallbacks: new Map()
+    speechFollowRaf: null,
+    speechFollowWantsSmooth: false,
+    speechChunkCounts: new Map(),
+    speechStartCallbacks: new Map(),
+    speechCompletionCallbacks: new Map()
 };
 
 function sanitizeText(value) {
@@ -1468,6 +1541,208 @@ function syncParticipantSetupUi() {
     refreshParticipantScoreLabels();
 }
 
+function waitMs(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function appendMessageAndWaitForPlayback(kind, label, text, options = {}) {
+    return new Promise((resolve) => {
+        appendMessage(kind, label, text, {
+            ...options,
+            onPlaybackComplete: () => {
+                try {
+                    if (typeof options.onPlaybackComplete === "function") options.onPlaybackComplete();
+                } finally {
+                    resolve();
+                }
+            }
+        });
+    });
+}
+
+function isLiveMatchScreenVisible() {
+    return state.liveScreenActive || state.coinTossAnimating || state.waitingForCoinChoice || state.started || state.completed || state.transcript.length > 0;
+}
+
+function syncScreenVisibility() {
+    const showLiveMatch = isLiveMatchScreenVisible();
+    document.body.dataset.screen = showLiveMatch ? "match" : "setup";
+    if (appHeroEl) appHeroEl.hidden = showLiveMatch;
+    if (appStatusStripEl) appStatusStripEl.hidden = showLiveMatch;
+    if (setupScreenEl) setupScreenEl.hidden = showLiveMatch;
+    if (matchScreenEl) matchScreenEl.hidden = !showLiveMatch;
+}
+
+function buildMatchSummaryItem(label, value, options = {}) {
+    const item = document.createElement("div");
+    item.className = "match-summary-item";
+    if (options.kind) item.classList.add(options.kind);
+
+    const itemLabel = document.createElement("div");
+    itemLabel.className = "match-summary-label";
+    itemLabel.textContent = label;
+
+    const itemValue = document.createElement("div");
+    itemValue.className = "match-summary-value";
+    if (value instanceof Node) itemValue.appendChild(value);
+    else itemValue.textContent = value;
+
+    item.appendChild(itemLabel);
+    item.appendChild(itemValue);
+    return item;
+}
+
+function getLeadSummaryText() {
+    if (state.waitingForCoinChoice) {
+        return l("Lead choice pending.", "Choix de mène en attente.");
+    }
+    if (!state.started) {
+        return l("Pending toss.", "Tirage en attente.");
+    }
+    return isFrenchLocale()
+    ? `${caseLabel(1)} : ${speakerName(state.leadByCase[1])} • ${caseLabel(2)} : ${speakerName(state.leadByCase[2])}`
+    : `${caseLabel(1)}: ${speakerName(state.leadByCase[1])} • ${caseLabel(2)}: ${speakerName(state.leadByCase[2])}`;
+}
+
+function getCoinTossSummaryText() {
+    if (state.coinTossAnimating) return l("In progress.", "En cours.");
+    if (!state.coinResult) return l("Pending.", "En attente.");
+    return isFrenchLocale()
+    ? `${coinSideLabel(state.coinResult)} • ${speakerName(state.coinWinner)} gagne`
+    : `${coinSideLabel(state.coinResult)} • ${speakerName(state.coinWinner)} wins`;
+}
+
+function renderMatchSetupSummary() {
+    if (!matchSetupSummaryEl) return;
+    matchSetupSummaryEl.innerHTML = "";
+    if (!isLiveMatchScreenVisible()) return;
+
+    const participantOneMode = state.started || state.coinResult || state.waitingForCoinChoice
+    ? state.participantTypes.human
+    : normalizeParticipantMode(participantOneTypeSelectEl?.value || "human");
+
+    const items = [
+        {
+            label: l("Participants", "Participantes"),
+            value: `${state.names.human} (${participantOneMode === "ai" ? l("AI", "IA") : l("Human", "Humain")}) • ${state.names.ai} (${l("AI", "IA")})`,
+            kind: "participants-summary"
+        },
+        {
+            label: l("Models", "Modèles"),
+            value: `${state.participantModels.human} • ${state.participantModels.ai}`
+        },
+        {
+            label: l("Voice", "Voix"),
+            value: state.voiceMode === "browser" ? l("Browser voice", "Voix du navigateur") : l("OpenAI voice", "Voix OpenAI")
+        },
+        {
+            label: l("Coin toss", "Tirage"),
+            value: getCoinTossSummaryText(),
+            kind: "coin-summary"
+        },
+        {
+            label: l("Case order", "Ordre des cas"),
+            value: getLeadSummaryText(),
+            kind: "order-summary"
+        }
+    ];
+
+    items.forEach((item) => {
+        matchSetupSummaryEl.appendChild(buildMatchSummaryItem(item.label, item.value, item));
+    });
+}
+
+function renderMatchCaseCard(caseNum, cardEl, summaryEl, metaEl, questionEl, textEl) {
+    if (!summaryEl || !metaEl || !questionEl || !textEl) return;
+    const caseData = state.cases[caseNum] || { title: "", question: "", text: "" };
+    const currentPhase = getCurrentPhase();
+    const isCurrentCase = !!currentPhase?.caseNum && currentPhase.caseNum === caseNum;
+    const leaderReady = state.started;
+
+    summaryEl.textContent = caseData.title
+    ? `${caseLabel(caseNum)} • ${caseData.title}`
+    : caseLabel(caseNum);
+
+    metaEl.textContent = leaderReady
+    ? isFrenchLocale()
+        ? `Mène : ${speakerName(state.leadByCase[caseNum])}`
+        : `Leader: ${speakerName(state.leadByCase[caseNum])}`
+    : l("Leader will be confirmed after the toss.", "La meneuse sera confirmée après le tirage.");
+
+    questionEl.textContent = caseData.question
+    ? isFrenchLocale()
+        ? `Question : ${caseData.question}`
+        : `Question: ${caseData.question}`
+    : l("No moderator question loaded yet.", "Aucune question du modérateur n’est chargée pour le moment.");
+
+    textEl.textContent = caseData.text || l("No case text loaded yet.", "Aucun texte de cas n’est chargé pour le moment.");
+
+    if (cardEl) {
+        cardEl.classList.toggle("current", isCurrentCase);
+    }
+}
+
+function renderMatchCaseReference() {
+    renderMatchCaseCard(1, matchCase1CardEl, matchCase1SummaryEl, matchCase1MetaEl, matchCase1QuestionEl, matchCase1TextEl);
+    renderMatchCaseCard(2, matchCase2CardEl, matchCase2SummaryEl, matchCase2MetaEl, matchCase2QuestionEl, matchCase2TextEl);
+}
+
+function syncCoinTossFaceLabels() {
+    if (!coinTossCoinEl) return;
+    const [front, back] = coinTossCoinEl.querySelectorAll(".coin-face");
+    if (front) front.textContent = coinSideLabel("heads").slice(0, 1).toUpperCase();
+    if (back) back.textContent = coinSideLabel("tails").slice(0, 1).toUpperCase();
+}
+
+function syncCoinTossUi() {
+    syncCoinTossFaceLabels();
+    if (judgePanelDefaultEl) judgePanelDefaultEl.hidden = !!state.showCoinTossCeremony;
+    if (coinTossCardEl) coinTossCardEl.hidden = !state.showCoinTossCeremony;
+    if (coinTossAnimationEl) {
+        coinTossAnimationEl.classList.toggle("is-flipping", state.coinTossAnimating);
+        coinTossAnimationEl.classList.toggle("is-settled", !state.coinTossAnimating && !!state.coinResult);
+        coinTossAnimationEl.classList.toggle("result-heads", state.coinResult === "heads");
+        coinTossAnimationEl.classList.toggle("result-tails", state.coinResult === "tails");
+    }
+
+    if (!coinTossStatusEl) return;
+
+    if (state.coinTossAnimating) {
+        coinTossStatusEl.textContent = l("The coin is being flipped to determine who controls Case #1.", "La pièce est lancée pour déterminer qui contrôlera le cas 1.");
+        return;
+    }
+    if (state.waitingForCoinChoice) {
+        coinTossStatusEl.textContent = l("Participant 1 won the toss. Choose whether to lead or pass on Case #1.", "Le participant 1 a gagné le tirage. Choisissez s’il mène ou passe au cas 1.");
+        return;
+    }
+    if (state.showCoinTossCeremony && state.started) {
+        coinTossStatusEl.textContent = l("Match opening confirmed. Moving into the moderator’s first case announcement.", "Ouverture du match confirmée. Passage à la première annonce de cas du modérateur.");
+        return;
+    }
+    if (state.coinResult && state.coinWinner) {
+        coinTossStatusEl.textContent = isFrenchLocale()
+        ? `${speakerName("human")} a choisi ${coinSideLabel(state.coinCall)}. Le résultat est ${coinSideLabel(state.coinResult)}. ${speakerName(state.coinWinner)} gagne le tirage.`
+        : `${speakerName("human")} called ${coinSideLabel(state.coinCall)}. The coin is ${coinSideLabel(state.coinResult)}. ${speakerName(state.coinWinner)} wins the toss.`;
+        return;
+    }
+    coinTossStatusEl.textContent = l("The moderator is preparing the coin toss.", "Le modérateur prépare le tirage.");
+}
+
+async function playCoinTossAnimation(coinCall, coinResult, winner) {
+    const runId = state.matchRunId;
+    state.coinCall = coinCall;
+    state.coinResult = coinResult;
+    state.coinWinner = winner;
+    state.coinTossAnimating = true;
+    refreshControls();
+    setStatus(l("Running coin toss...", "Tirage en cours..."));
+    await waitMs(2400);
+    if (runId !== state.matchRunId) return false;
+    state.coinTossAnimating = false;
+    refreshControls();
+    return true;
+}
+
 function isHumanSubmissionPhase(phase) {
     return !!phase && (phase.kind === "speech" || phase.kind === "judgeAnswer") && isHumanControlledRole(phase.speaker);
 }
@@ -1608,6 +1883,28 @@ function registerSpeechCompletionCallback(transcriptIndex, callback) {
     state.speechCompletionCallbacks.set(transcriptIndex, existing);
 }
 
+function registerSpeechStartCallback(transcriptIndex, callback) {
+    if (!Number.isInteger(transcriptIndex) || transcriptIndex < 0 || typeof callback !== "function") return;
+    const existing = state.speechStartCallbacks.get(transcriptIndex) || [];
+    existing.push(callback);
+    state.speechStartCallbacks.set(transcriptIndex, existing);
+}
+
+function invokeSpeechStartCallbacks(transcriptIndex) {
+    if (!Number.isInteger(transcriptIndex) || transcriptIndex < 0) return;
+    const callbacks = state.speechStartCallbacks.get(transcriptIndex) || [];
+    state.speechStartCallbacks.delete(transcriptIndex);
+    callbacks.forEach((callback) => {
+        try {
+            window.setTimeout(() => {
+                try { callback(); } catch (error) { console.error("Speech start callback failed:", error); }
+            }, 0);
+        } catch (error) {
+            console.error("Could not schedule speech start callback:", error);
+        }
+    });
+}
+
 function invokeSpeechCompletionCallbacks(transcriptIndex) {
     if (!Number.isInteger(transcriptIndex) || transcriptIndex < 0) return;
     const callbacks = state.speechCompletionCallbacks.get(transcriptIndex) || [];
@@ -1646,8 +1943,9 @@ function finalizeSpeechPlaybackForMessage(transcriptIndex) {
 }
 
 function finalizeAllSpeechPlaybackCallbacks() {
-    const ids = new Set([...state.speechChunkCounts.keys(), ...state.speechCompletionCallbacks.keys()]);
+    const ids = new Set([...state.speechChunkCounts.keys(), ...state.speechStartCallbacks.keys(), ...state.speechCompletionCallbacks.keys()]);
     state.speechChunkCounts.clear();
+    ids.forEach((id) => invokeSpeechStartCallbacks(id));
     ids.forEach((id) => invokeSpeechCompletionCallbacks(id));
 }
 
@@ -1801,6 +2099,7 @@ function beginSpeechProgressForQueueEntry(entry) {
     if (!entryText) return;
     const messageIndex = Number.isInteger(entry?.transcriptIndex) ? entry.transcriptIndex : getMostRecentReadableTranscriptIndex();
     if (messageIndex < 0 || !state.transcript[messageIndex]) return;
+    invokeSpeechStartCallbacks(messageIndex);
     if (state.speechProgressMessageIndex !== messageIndex) {
         const previousIndex = state.speechProgressMessageIndex;
         state.speechProgressMessageIndex = messageIndex;
@@ -1981,6 +2280,7 @@ function stopSpeechPlayback(showMessage = false, { resolveCallbacks = true } = {
     if (resolveCallbacks) finalizeAllSpeechPlaybackCallbacks();
     else {
         state.speechChunkCounts.clear();
+        state.speechStartCallbacks.clear();
         state.speechCompletionCallbacks.clear();
     }
     refreshSpeechUi();
@@ -2386,8 +2686,17 @@ function appendMessage(kind, label, text, options = {}) {
                               substantive: options.substantive !== false
     });
     const transcriptIndex = state.transcript.length - 1;
+    const onPlaybackStart = typeof options.onPlaybackStart === "function" ? options.onPlaybackStart : null;
     const onPlaybackComplete = typeof options.onPlaybackComplete === "function" ? options.onPlaybackComplete : null;
     const willAutoSpeak = !options.silent && AUTO_SPEAK_MESSAGE_KINDS.has(kind) && !!normalizeSpeechText(text);
+    if (onPlaybackStart) {
+        if (willAutoSpeak) registerSpeechStartCallback(transcriptIndex, onPlaybackStart);
+        else {
+            window.setTimeout(() => {
+                try { onPlaybackStart(); } catch (error) { console.error("Immediate playback-start callback failed:", error); }
+            }, 0);
+        }
+    }
     if (onPlaybackComplete) {
         if (willAutoSpeak) registerSpeechCompletionCallback(transcriptIndex, onPlaybackComplete);
         else {
@@ -2692,10 +3001,26 @@ function renderPhaseList() {
         item.appendChild(meta);
         phaseListEl.appendChild(item);
     });
+    queueMicrotask(() => {
+        const currentItem = phaseListEl.querySelector(".phase-item.current");
+        if (currentItem && typeof currentItem.scrollIntoView === "function") {
+            currentItem.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        }
+    });
 }
 
 function updatePhaseHeader() {
     const phase = getCurrentPhase();
+    if (state.coinTossAnimating) {
+        currentPhaseTitleEl.textContent = l("Coin Toss", "Tirage");
+        currentPhaseMetaEl.textContent = l("Determining who controls Case #1.", "Détermination du contrôle du cas 1.");
+        return;
+    }
+    if (state.waitingForCoinChoice) {
+        currentPhaseTitleEl.textContent = l("Coin Toss Choice", "Choix après le tirage");
+        currentPhaseMetaEl.textContent = l("Participant 1 must choose whether to lead or pass on Case #1.", "Le participant 1 doit choisir s’il mène ou passe au cas 1.");
+        return;
+    }
     if (!state.started && !state.completed) {
         currentPhaseTitleEl.textContent = l("Setup", "Configuration");
         currentPhaseMetaEl.textContent = l("Upload two cases and start the match.", "Téléversez deux cas et démarrez le match.");
@@ -3082,11 +3407,13 @@ function clearScoreboard() {
 function updateMatchSummaryPlaceholder() {
     if (!state.started) {
         clearScoreboard();
+        renderMatchSetupSummary();
         return;
     }
     scoreSummaryEl.textContent = isFrenchLocale()
     ? `${caseLabel(1)} mené par : ${speakerName(state.leadByCase[1])}. ${caseLabel(2)} mené par : ${speakerName(state.leadByCase[2])}. Mode des juges : ${state.judgeMode === "ai" ? "juges IA" : "juges humains"}.`
     : `Case #1 leader: ${speakerName(state.leadByCase[1])}. Case #2 leader: ${speakerName(state.leadByCase[2])}. Judge mode: ${state.judgeMode === "ai" ? "AI judges" : "Human judges"}.`;
+    renderMatchSetupSummary();
 }
 
 function renderScorecards(cards, tally, sourceMode = "ai") {
@@ -4907,9 +5234,14 @@ function resetStateForNewMatch() {
     state.phases = [];
     state.currentPhaseIndex = -1;
     state.busy = false;
+    state.liveScreenActive = false;
     state.started = false;
     state.completed = false;
     state.waitingForCoinChoice = false;
+    state.showCoinTossCeremony = false;
+    state.coinTossAnimating = false;
+    state.coinCall = "";
+    state.coinResult = "";
     state.coinWinner = "";
     state.phaseReady = false;
     state.phaseAwaitingPlaybackForId = "";
@@ -4930,6 +5262,7 @@ function resetStateForNewMatch() {
     state.aiPreparationErrors = {};
     state.mainComposerHydratedPhaseId = "";
     state.speechChunkCounts = new Map();
+    state.speechStartCallbacks = new Map();
     state.speechCompletionCallbacks = new Map();
     state.voiceMode = normalizeVoiceMode(voiceModeSelectEl?.value || "openai");
     state.participantTypes = {
@@ -4980,7 +5313,7 @@ function applyCaseOneChoice(decidingRole, choice) {
     );
 }
 
-function startMatch() {
+async function startMatch() {
     try {
         const { case1, case2 } = validateBeforeStart();
         resetStateForNewMatch();
@@ -4995,7 +5328,12 @@ function startMatch() {
         state.cases[2] = case2;
         state.judgeMode = judgeModeSelectEl.value;
         state.voiceMode = normalizeVoiceMode(voiceModeSelectEl?.value || "openai");
+        state.liveScreenActive = true;
         updateVoiceDisclosure();
+        renderMatchCaseReference();
+        updateMatchSummaryPlaceholder();
+        updatePhaseHeader();
+        refreshControls();
 
         appendMessage("moderator", moderatorLabel(), l(
             `Welcome to this Ethics Bowl-style match between ${state.names.human} and ${state.names.ai}. This site uses the official two-case structure, adapted for two single participants.`,
@@ -5003,28 +5341,40 @@ function startMatch() {
         ));
 
         appendMessage("moderator", moderatorLabel(), l(
-            `Participant 1, ${state.names.human}, is ${participantControlSummary("human")}. Participant 2, ${state.names.ai}, is ${participantControlSummary("ai")}. Any AI-controlled participant is treated as a single opponent, not a team.`,
-                                                       `Le participant 1, ${state.names.human}, est ${participantControlSummary("human")}. Le participant 2, ${state.names.ai}, est ${participantControlSummary("ai")}. Toute participante contrôlée par l’IA est traitée comme une seule adversaire, et non comme une équipe.`
-        ));
-
-        appendMessage("moderator", moderatorLabel(), l(
             "The coin-toss winner chooses whether to lead or pass on Case #1, the other participant leads Case #2, there is a judges' period after each case, and both participants are questioned once during their led case.",
             "La gagnante du tirage choisit si elle mène ou passe au cas 1, l’autre participante mène le cas 2, il y a une période des juges après chaque cas, et chaque participante reçoit une question pendant le cas qu’elle mène."
-        ));
-
-        appendMessage("moderator", moderatorLabel(), l(
-            "This match uses the official Ethics Bowl timings: three minutes for every confer period, five minutes for each presentation, three minutes for commentary and response, and a ten-minute judges' period divided evenly across the three judges.",
-            "Ce match utilise les temps officiels du la Coupe éthique Canada : trois minutes pour chaque caucus, cinq minutes pour chaque présentation, trois minutes pour le commentaire et la réplique, et une période des juges de dix minutes répartie entre les trois juges."
         ));
 
         const coinCall = coinCallSelectEl.value;
         const coinResult = Math.random() < 0.5 ? "heads" : "tails";
         const winner = coinCall === coinResult ? "human" : "ai";
-        state.coinWinner = winner;
+
+        await appendMessageAndWaitForPlayback(
+            "moderator",
+            moderatorLabel(),
+            l(
+                `I will now flip a coin. ${speakerName("human")}, what is your call?`,
+                `Je vais maintenant lancer une pièce. ${speakerName("human")}, quel est votre choix?`
+            ),
+            {
+                onPlaybackStart: () => {
+                    state.showCoinTossCeremony = true;
+                    refreshControls();
+                }
+            }
+        );
+        await appendMessageAndWaitForPlayback(
+            messageKindForRole("human"),
+            speakerName("human"),
+            titleCase(coinSideLabel(coinCall)),
+            { voiceKey: messageKindForRole("human") }
+        );
+        const animationCompleted = await playCoinTossAnimation(coinCall, coinResult, winner);
+        if (!animationCompleted) return;
 
         appendMessage("moderator", moderatorLabel(), isFrenchLocale()
-        ? `${speakerName("human")} a choisi ${coinSideLabel(coinCall)}. Le résultat est ${coinSideLabel(coinResult)}. ${speakerName(winner)} gagne le tirage.`
-        : `${speakerName("human")} called ${coinCall}. The coin is ${coinResult}. ${speakerName(winner)} wins the toss.`
+            ? `${speakerName("human")} a choisi ${coinSideLabel(coinCall)}. Le résultat est ${coinSideLabel(coinResult)}. ${speakerName(winner)} gagne le tirage.`
+            : `${speakerName("human")} called ${coinSideLabel(coinCall)}. The coin is ${coinSideLabel(coinResult)}. ${speakerName(winner)} wins the toss.`
         );
 
         if (winner === "human" && isHumanControlledRole("human")) {
@@ -5169,7 +5519,13 @@ function enterCurrentPhase() {
     appendMessage("moderator", moderatorLabel(), phaseAnnouncementText(phase), {
         caseNum: phase.caseNum || 0,
             phaseId: phase.id,
-            onPlaybackComplete: () => activatePhaseAfterModerator(phase.id)
+            onPlaybackComplete: () => {
+                if (phase.kind === "moderatorCase" && state.currentPhaseIndex === 0) {
+                    state.showCoinTossCeremony = false;
+                    refreshControls();
+                }
+                activatePhaseAfterModerator(phase.id);
+            }
     });
 }
 
@@ -5262,14 +5618,18 @@ function refreshControls() {
     updateApiKeyUi();
     syncParticipantSetupUi();
     refreshParticipantScoreLabels();
+    syncScreenVisibility();
+    renderMatchSetupSummary();
+    renderMatchCaseReference();
+    syncCoinTossUi();
     const phase = getCurrentPhase();
     const hasApiKey = !!getApiKey();
     const composerActive = currentPhaseUsesMainComposer(phase);
     const humanTurn = currentPhaseRequiresHumanSubmission(phase);
     const judgeQuestionComposerActive = phase && state.phaseReady && isHumanJudgeQuestionPhase(phase);
     const waitingForPlayback = isCurrentPhaseAwaitingPlayback(phase);
-    const locked = state.busy || state.isRecording || state.voiceFinalizePending || waitingForPlayback;
-    const submitLocked = state.completed || state.busy || state.voiceFinalizePending || waitingForPlayback;
+    const locked = state.busy || state.isRecording || state.voiceFinalizePending || waitingForPlayback || state.coinTossAnimating;
+    const submitLocked = state.completed || state.busy || state.voiceFinalizePending || waitingForPlayback || state.coinTossAnimating;
 
     [
         participantOneTypeSelectEl, participantOneModelSelectEl, humanNameInputEl, aiNameInputEl, coinCallSelectEl,
@@ -5282,6 +5642,7 @@ function refreshControls() {
 
     startMatchBtnEl.disabled = !hasApiKey || state.started || state.waitingForCoinChoice || locked;
     resetMatchBtnEl.disabled = locked;
+    if (newMatchBtnEl) newMatchBtnEl.disabled = locked;
 
     coinChoicePanelEl.hidden = !state.waitingForCoinChoice;
     leadBtnEl.disabled = !state.waitingForCoinChoice || locked;
@@ -5313,7 +5674,13 @@ function refreshControls() {
     resumeTimerBtnEl.disabled = !hasTimedPhase || !state.phaseReady || !timerExists || state.timer.running || state.timer.remaining <= 0;
     resetTimerBtnEl.disabled = !hasTimedPhase || !state.phaseReady;
 
-    if (!state.started) {
+    if (state.coinTossAnimating) {
+        nextActionBtnEl.textContent = l("Coin Toss Running", "Tirage en cours");
+        nextActionBtnEl.disabled = true;
+    } else if (state.waitingForCoinChoice) {
+        nextActionBtnEl.textContent = l("Waiting for Coin Toss Choice", "En attente du choix après le tirage");
+        nextActionBtnEl.disabled = true;
+    } else if (!state.started) {
         nextActionBtnEl.textContent = l("Advance / Generate", "Avancer / Générer");
         nextActionBtnEl.disabled = true;
     } else if (state.completed) {
@@ -5379,7 +5746,7 @@ function refreshControls() {
         button.textContent = isFrenchLocale() ? `Poser la question du ${judgeLabel(judgeNumber)}` : `Ask ${judgeLabel(judgeNumber)} Question`;
     });
 
-    computeHumanResultBtnEl.disabled = judgeModeSelectEl.value !== "human" || state.busy || state.isRecording || state.voiceFinalizePending;
+    computeHumanResultBtnEl.disabled = judgeModeSelectEl.value !== "human" || state.busy || state.isRecording || state.voiceFinalizePending || state.coinTossAnimating;
 
     updateComposerPlaceholder();
     refreshJudgeStatuses();
@@ -5507,8 +5874,9 @@ function applyLocaleToUi() {
     updateApiKeyUi();
 }
 
-startMatchBtnEl.addEventListener("click", startMatch);
+startMatchBtnEl.addEventListener("click", () => { void startMatch(); });
 resetMatchBtnEl.addEventListener("click", fullReset);
+newMatchBtnEl?.addEventListener("click", fullReset);
 nextActionBtnEl.addEventListener("click", () => { void handleNextAction(); });
 leadBtnEl.addEventListener("click", () => handleHumanCoinChoice("lead"));
 passBtnEl.addEventListener("click", () => handleHumanCoinChoice("pass"));
@@ -5634,6 +6002,7 @@ window.addEventListener("beforeunload", () => {
 });
 
 loadSetup();
+initSiteLogo();
 ensureSpeechUi();
 fullReset();
 applyLocaleToUi();

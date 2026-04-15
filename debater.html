@@ -8,17 +8,13 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="hero">
-      <div>
-        <div
-          class="eyebrow"
-          data-i18n-en="Ethics Bowl Match Interface"
-          data-i18n-fr="Interface de match de la Coupe éthique Canada
-"
-        >
-          Ethics Bowl Match Interface
-        </div>
+    <header id="appHero" class="hero">
+      <div class="hero-brand" aria-label="Site branding">
+        <img data-logo-slot class="site-logo hero-logo" alt="Ethics Bowl logo" hidden />
+        <div data-logo-fallback class="site-logo-fallback hero-logo-fallback">Ethics Bowl</div>
+      </div>
 
+      <div>
         <h1
           data-i18n-en="Ethics Bowl Match"
           data-i18n-fr="Match de la Coupe éthique Canada
@@ -58,7 +54,7 @@
       </div>
     </header>
 
-    <div class="status-strip">
+    <div id="appStatusStrip" class="status-strip">
       <div
         class="status-chip active"
         data-i18n-en="Ethics Bowl rules hardcoded"
@@ -74,10 +70,10 @@
 
       <div
         class="status-chip subtle"
-        data-i18n-en="User uploads both case texts"
-        data-i18n-fr="L’utilisatrice téléverse les deux textes de cas"
+        data-i18n-en="Two uploaded cases drive the full match"
+        data-i18n-fr="Les deux cas téléversés pilotent tout le match"
       >
-        User uploads both case texts
+        Two uploaded cases drive the full match
       </div>
 
       <div
@@ -89,552 +85,654 @@
       </div>
     </div>
 
-    <div class="arena-grid ethics-layout">
-      <aside class="side-card setup-card">
-        <h2 data-i18n-en="Match Setup" data-i18n-fr="Configuration du match">Match Setup</h2>
-
-        <div class="control-group">
-          <label for="participantOneTypeSelect">
-            <span data-i18n-en="Participant 1 control" data-i18n-fr="Contrôle du participant 1">
-              Participant 1 control
-            </span>
-          </label>
-          <select id="participantOneTypeSelect">
-            <option value="human" data-i18n-en="Human" data-i18n-fr="Humain">Human</option>
-            <option value="ai" data-i18n-en="AI" data-i18n-fr="IA">AI</option>
-          </select>
-          <div
-            class="small-note"
-            data-i18n-en="Participant 2 is always AI-controlled. Switch Participant 1 to AI for an AI-vs-AI match."
-            data-i18n-fr="Le participant 2 est toujours contrôlé par l’IA. Passez le participant 1 à IA pour un match IA contre IA."
-          >
-            Participant 2 is always AI-controlled. Switch Participant 1 to AI for an AI-vs-AI match.
+    <section id="setupScreen" class="screen-view setup-screen">
+      <div class="setup-screen-shell">
+        <aside class="side-card setup-card setup-screen-card">
+          <div class="setup-screen-head">
+            <div>
+              <div
+                class="panel-kicker"
+                data-i18n-en="Initial screen"
+                data-i18n-fr="Écran initial"
+              >
+                Initial screen
+              </div>
+              <h2 data-i18n-en="Match Setup" data-i18n-fr="Configuration du match">Match Setup</h2>
+              <p
+                class="small-note"
+                data-i18n-en="Configure participants, judging, voice, and both cases here. When the match begins, the app switches to a live match screen."
+                data-i18n-fr="Configurez ici les participantes, les juges, la voix et les deux cas. Quand le match commence, l’application passe à un écran de match en direct."
+              >
+                Configure participants, judging, voice, and both cases here. When the match begins, the app switches to a live match screen.
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div class="control-group">
-          <label for="humanNameInput">
-            <span data-i18n-en="Participant 1 name" data-i18n-fr="Nom du participant 1">
-              Participant 1 name
-            </span>
-          </label>
-          <input id="humanNameInput" type="text" />
-        </div>
-
-        <div class="control-group" id="participantOneModelWrap">
-          <label for="participantOneModelSelect">
-            <span data-i18n-en="Participant 1 model" data-i18n-fr="Modèle du participant 1">
-              Participant 1 model
-            </span>
-          </label>
-          <select id="participantOneModelSelect"></select>
-        </div>
-
-        <div class="control-group">
-          <label for="aiNameInput">
-            <span data-i18n-en="Participant 2 name" data-i18n-fr="Nom du participant 2">
-              Participant 2 name
-            </span>
-          </label>
-          <input id="aiNameInput" type="text" />
-        </div>
-
-        <div class="control-group">
-          <label for="modelSelect">
-            <span data-i18n-en="Participant 2 model" data-i18n-fr="Modèle du participant 2">
-              Participant 2 model
-            </span>
-          </label>
-          <select id="modelSelect"></select>
-        </div>
-
-        <div class="control-group">
-          <label for="coinCallSelect">
-            <span data-i18n-en="Participant 1 coin call" data-i18n-fr="Choix du tirage du participant 1">
-              Participant 1 coin call
-            </span>
-          </label>
-          <select id="coinCallSelect">
-            <option value="heads" data-i18n-en="Heads" data-i18n-fr="Face">Heads</option>
-            <option value="tails" data-i18n-en="Tails" data-i18n-fr="Pile">Tails</option>
-          </select>
-        </div>
-
-        <div class="control-group">
-          <label for="judgeModeSelect">
-            <span data-i18n-en="Judge mode" data-i18n-fr="Mode des juges">
-              Judge mode
-            </span>
-          </label>
-          <select id="judgeModeSelect">
-            <option value="ai" data-i18n-en="AI judges" data-i18n-fr="Juges IA">AI judges</option>
-            <option value="human" data-i18n-en="Human judges" data-i18n-fr="Juges humains">Human judges</option>
-          </select>
-        </div>
-
-        <div class="control-group">
-          <label for="voiceModeSelect">
-            <span data-i18n-en="Read-aloud voice" data-i18n-fr="Voix de lecture">
-              Read-aloud voice
-            </span>
-          </label>
-          <select id="voiceModeSelect">
-            <option value="openai" data-i18n-en="OpenAI voice" data-i18n-fr="Voix OpenAI">OpenAI voice</option>
-            <option value="browser" data-i18n-en="Browser default voice" data-i18n-fr="Voix par défaut du navigateur">Browser default voice</option>
-          </select>
-        </div>
-
-        <div class="button-cluster">
-          <button
-            id="startMatchBtn"
-            class="primary-btn"
-            type="button"
-            data-i18n-en="Start Match"
-            data-i18n-fr="Démarrer le match"
-          >
-            Start Match
-          </button>
-
-          <button
-            id="resetMatchBtn"
-            class="ghost-btn"
-            type="button"
-            data-i18n-en="Reset Match"
-            data-i18n-fr="Réinitialiser le match"
-          >
-            Reset Match
-          </button>
-        </div>
-
-        <div id="coinChoicePanel" class="coin-choice-panel" hidden>
           <div class="control-group">
-            <label>
-              <span data-i18n-en="Coin toss choice" data-i18n-fr="Choix après le tirage">
-                Coin toss choice
+            <label for="participantOneTypeSelect">
+              <span data-i18n-en="Participant 1 control" data-i18n-fr="Contrôle du participant 1">
+                Participant 1 control
               </span>
             </label>
+            <select id="participantOneTypeSelect">
+              <option value="human" data-i18n-en="Human" data-i18n-fr="Humain">Human</option>
+              <option value="ai" data-i18n-en="AI" data-i18n-fr="IA">AI</option>
+            </select>
             <div
               class="small-note"
-              data-i18n-en="Participant 1 won the toss. Choose whether Participant 1 will lead or pass on Case #1."
-              data-i18n-fr="Le participant 1 a gagné le tirage. Choisissez s’il mènera ou passera au cas 1."
+              data-i18n-en="Participant 2 is always AI-controlled. Switch Participant 1 to AI for an AI-vs-AI match."
+              data-i18n-fr="Le participant 2 est toujours contrôlé par l’IA. Passez le participant 1 à IA pour un match IA contre IA."
             >
-              Participant 1 won the toss. Choose whether Participant 1 will lead or pass on Case #1.
+              Participant 2 is always AI-controlled. Switch Participant 1 to AI for an AI-vs-AI match.
             </div>
+          </div>
+
+          <div class="control-group">
+            <label for="humanNameInput">
+              <span data-i18n-en="Participant 1 name" data-i18n-fr="Nom du participant 1">
+                Participant 1 name
+              </span>
+            </label>
+            <input id="humanNameInput" type="text" />
+          </div>
+
+          <div class="control-group" id="participantOneModelWrap">
+            <label for="participantOneModelSelect">
+              <span data-i18n-en="Participant 1 model" data-i18n-fr="Modèle du participant 1">
+                Participant 1 model
+              </span>
+            </label>
+            <select id="participantOneModelSelect"></select>
+          </div>
+
+          <div class="control-group">
+            <label for="aiNameInput">
+              <span data-i18n-en="Participant 2 name" data-i18n-fr="Nom du participant 2">
+                Participant 2 name
+              </span>
+            </label>
+            <input id="aiNameInput" type="text" />
+          </div>
+
+          <div class="control-group">
+            <label for="modelSelect">
+              <span data-i18n-en="Participant 2 model" data-i18n-fr="Modèle du participant 2">
+                Participant 2 model
+              </span>
+            </label>
+            <select id="modelSelect"></select>
+          </div>
+
+          <div class="control-group">
+            <label for="coinCallSelect">
+              <span data-i18n-en="Participant 1 coin call" data-i18n-fr="Choix du tirage du participant 1">
+                Participant 1 coin call
+              </span>
+            </label>
+            <select id="coinCallSelect">
+              <option value="heads" data-i18n-en="Heads" data-i18n-fr="Face">Heads</option>
+              <option value="tails" data-i18n-en="Tails" data-i18n-fr="Pile">Tails</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="judgeModeSelect">
+              <span data-i18n-en="Judge mode" data-i18n-fr="Mode des juges">
+                Judge mode
+              </span>
+            </label>
+            <select id="judgeModeSelect">
+              <option value="ai" data-i18n-en="AI judges" data-i18n-fr="Juges IA">AI judges</option>
+              <option value="human" data-i18n-en="Human judges" data-i18n-fr="Juges humains">Human judges</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="voiceModeSelect">
+              <span data-i18n-en="Read-aloud voice" data-i18n-fr="Voix de lecture">
+                Read-aloud voice
+              </span>
+            </label>
+            <select id="voiceModeSelect">
+              <option value="openai" data-i18n-en="OpenAI voice" data-i18n-fr="Voix OpenAI">OpenAI voice</option>
+              <option value="browser" data-i18n-en="Browser default voice" data-i18n-fr="Voix par défaut du navigateur">Browser default voice</option>
+            </select>
           </div>
 
           <div class="button-cluster">
             <button
-              id="leadBtn"
-              class="secondary-btn"
+              id="startMatchBtn"
+              class="primary-btn"
               type="button"
-              data-i18n-en="Lead Case #1"
-              data-i18n-fr="Mener le cas 1"
+              data-i18n-en="Start Match"
+              data-i18n-fr="Démarrer le match"
             >
-              Lead Case #1
+              Start Match
             </button>
 
             <button
-              id="passBtn"
-              class="secondary-btn"
-              type="button"
-              data-i18n-en="Pass Case #1"
-              data-i18n-fr="Passer le cas 1"
-            >
-              Pass Case #1
-            </button>
-          </div>
-        </div>
-
-        <div class="timer-panel" style="margin-top:16px;">
-          <div class="panel-kicker" data-i18n-en="Current phase timer" data-i18n-fr="Minuterie de la phase actuelle">
-            Current phase timer
-          </div>
-          <div id="timerDisplay" class="timer-display">--:--</div>
-          <div id="timerHint" class="small-note">No active timed phase yet.</div>
-
-          <div class="button-cluster" style="margin-top:12px;">
-            <button
-              id="pauseTimerBtn"
-              class="secondary-btn"
-              type="button"
-              data-i18n-en="Pause"
-              data-i18n-fr="Pause"
-            >
-              Pause
-            </button>
-            <button
-              id="resumeTimerBtn"
-              class="secondary-btn"
-              type="button"
-              data-i18n-en="Resume"
-              data-i18n-fr="Reprendre"
-            >
-              Resume
-            </button>
-            <button
-              id="resetTimerBtn"
+              id="resetMatchBtn"
               class="ghost-btn"
               type="button"
-              data-i18n-en="Reset Phase Timer"
-              data-i18n-fr="Réinitialiser la minuterie"
+              data-i18n-en="Reset Match"
+              data-i18n-fr="Réinitialiser le match"
             >
-              Reset Phase Timer
+              Reset Match
             </button>
           </div>
 
-          <div
-            class="small-note"
-            style="margin-top:10px;"
-            data-i18n-en="Timed phases begin only after the moderator finishes speaking, and moderator-only transitions advance automatically."
-            data-i18n-fr="Les phases minutées commencent seulement quand le modérateur a fini de parler, et les transitions réservées au modérateur avancent automatiquement."
-          >
-            Timed phases begin only after the moderator finishes speaking, and moderator-only transitions advance automatically.
-          </div>
-        </div>
+          <details class="setup-details" open>
+            <summary data-i18n-en="Hardcoded Ethics Bowl match rules" data-i18n-fr="Règles intégrées du match de la Coupe éthique Canada">
+              Hardcoded Ethics Bowl match rules
+            </summary>
 
-        <details class="setup-details" open>
-          <summary data-i18n-en="Hardcoded Ethics Bowl match rules" data-i18n-fr="Règles intégrées du match de la Coupe éthique Canada
-">
-            Hardcoded Ethics Bowl match rules
-          </summary>
-
-          <div class="timing-sheet">
-            <ul class="timing-list">
-              <li data-i18n-en="Judges score each participant out of 60 using the official sheet: presentation /15 (3 criteria, each 1–5), response to feedback /10, responses to judges /20, commentary /10, respectful dialogue /5." data-i18n-fr="Les juges attribuent à chaque participante une note sur 60 selon la fiche officielle : présentation /15 (3 critères de 1 à 5), réponse aux commentaires /10, réponses aux juges /20, commentaire /10, dialogue respectueux /5.">
-                Judges score each participant out of 60 using the official sheet: presentation /15 (3 criteria, each 1–5), response to feedback /10, responses to judges /20, commentary /10, respectful dialogue /5.
-              </li>
-              <li data-i18n-en="Judges award votes based on the higher total score for each judge." data-i18n-fr="Chaque juge accorde son vote à la participante ayant le total le plus élevé.">
-                Judges award votes based on the higher total score for each judge.
-              </li>
-              <li data-i18n-en="If both sides receive 1.5 votes, the match is a tie." data-i18n-fr="Si les deux côtés reçoivent 1,5 vote, le match est nul.">
-                If both sides receive 1.5 votes, the match is a tie.
-              </li>
-              <li data-i18n-en="The app uses the full official online Ethics Bowl timings:" data-i18n-fr="L’application utilise les durées officielles complètes du la Coupe éthique Canada
- en ligne :">
-                The app uses the full official online Ethics Bowl timings:
-              </li>
-              <li data-i18n-en="Presentation confer: 3:00" data-i18n-fr="Caucus de présentation : 3:00">Presentation confer: 3:00</li>
-              <li data-i18n-en="Presentation: 5:00" data-i18n-fr="Présentation : 5:00">Presentation: 5:00</li>
-              <li data-i18n-en="Commentary confer: 3:00" data-i18n-fr="Caucus de commentaire : 3:00">Commentary confer: 3:00</li>
-              <li data-i18n-en="Commentary: 3:00" data-i18n-fr="Commentaire : 3:00">Commentary: 3:00</li>
-              <li data-i18n-en="Response confer: 3:00" data-i18n-fr="Caucus de réplique : 3:00">Response confer: 3:00</li>
-              <li data-i18n-en="Response: 3:00" data-i18n-fr="Réplique : 3:00">Response: 3:00</li>
-              <li data-i18n-en="Judges' period total: 10:00" data-i18n-fr="Période des juges totale : 10:00">Judges' period total: 10:00</li>
-              <li data-i18n-en="Each judge question: 1:00" data-i18n-fr="Chaque question de juge : 1:00">Each judge question: 1:00</li>
-              <li data-i18n-en="Each judge answer: 2:20" data-i18n-fr="Chaque réponse à un juge : 2:20">Each judge answer: 2:20</li>
-            </ul>
-          </div>
-        </details>
-
-        <details class="setup-details" open>
-          <summary data-i18n-en="Case #1" data-i18n-fr="Cas 1">Case #1</summary>
-
-          <div class="control-group">
-            <label for="case1TitleInput">
-              <span data-i18n-en="Case title" data-i18n-fr="Titre du cas">Case title</span>
-            </label>
-            <input id="case1TitleInput" type="text" />
-          </div>
-
-          <div class="control-group">
-            <label for="case1QuestionInput">
-              <span data-i18n-en="Moderator question" data-i18n-fr="Question du modérateur">Moderator question</span>
-            </label>
-            <input id="case1QuestionInput" type="text" />
-          </div>
-
-          <div class="control-group">
-            <label for="case1FileInput">
-              <span data-i18n-en="Upload case text (.txt, .md, .text)" data-i18n-fr="Téléverser le texte du cas (.txt, .md, .text)">
-                Upload case text (.txt, .md, .text)
-              </span>
-            </label>
-            <input id="case1FileInput" type="file" accept=".txt,.md,.text,text/plain,text/markdown" />
-          </div>
-
-          <div class="control-group">
-            <label for="case1TextInput">
-              <span data-i18n-en="Case text" data-i18n-fr="Texte du cas">Case text</span>
-            </label>
-            <textarea id="case1TextInput" class="case-editor"></textarea>
-          </div>
-        </details>
-
-        <details class="setup-details" open>
-          <summary data-i18n-en="Case #2" data-i18n-fr="Cas 2">Case #2</summary>
-
-          <div class="control-group">
-            <label for="case2TitleInput">
-              <span data-i18n-en="Case title" data-i18n-fr="Titre du cas">Case title</span>
-            </label>
-            <input id="case2TitleInput" type="text" />
-          </div>
-
-          <div class="control-group">
-            <label for="case2QuestionInput">
-              <span data-i18n-en="Moderator question" data-i18n-fr="Question du modérateur">Moderator question</span>
-            </label>
-            <input id="case2QuestionInput" type="text" />
-          </div>
-
-          <div class="control-group">
-            <label for="case2FileInput">
-              <span data-i18n-en="Upload case text (.txt, .md, .text)" data-i18n-fr="Téléverser le texte du cas (.txt, .md, .text)">
-                Upload case text (.txt, .md, .text)
-              </span>
-            </label>
-            <input id="case2FileInput" type="file" accept=".txt,.md,.text,text/plain,text/markdown" />
-          </div>
-
-          <div class="control-group">
-            <label for="case2TextInput">
-              <span data-i18n-en="Case text" data-i18n-fr="Texte du cas">Case text</span>
-            </label>
-            <textarea id="case2TextInput" class="case-editor"></textarea>
-          </div>
-        </details>
-      </aside>
-
-      <main class="chat-card">
-        <div id="chat" class="chat-log">
-          <article id="emptyState" class="empty-state">
-            <div
-              data-i18n-en="No messages yet."
-              data-i18n-fr="Aucun message pour le moment."
-              style="font-weight:700;margin-bottom:6px;"
-            >
-              No messages yet.
+            <div class="timing-sheet">
+              <ul class="timing-list">
+                <li data-i18n-en="Judges score each participant out of 60 using the official sheet: presentation /15 (3 criteria, each 1–5), response to feedback /10, responses to judges /20, commentary /10, respectful dialogue /5." data-i18n-fr="Les juges attribuent à chaque participante une note sur 60 selon la fiche officielle : présentation /15 (3 critères de 1 à 5), réponse aux commentaires /10, réponses aux juges /20, commentaire /10, dialogue respectueux /5.">
+                  Judges score each participant out of 60 using the official sheet: presentation /15 (3 criteria, each 1–5), response to feedback /10, responses to judges /20, commentary /10, respectful dialogue /5.
+                </li>
+                <li data-i18n-en="Judges award votes based on the higher total score for each judge." data-i18n-fr="Chaque juge accorde son vote à la participante ayant le total le plus élevé.">
+                  Judges award votes based on the higher total score for each judge.
+                </li>
+                <li data-i18n-en="If both sides receive 1.5 votes, the match is a tie." data-i18n-fr="Si les deux côtés reçoivent 1,5 vote, le match est nul.">
+                  If both sides receive 1.5 votes, the match is a tie.
+                </li>
+                <li data-i18n-en="The app uses the full official online Ethics Bowl timings:" data-i18n-fr="L’application utilise les durées officielles complètes de la Coupe éthique Canada en ligne :">
+                  The app uses the full official online Ethics Bowl timings:
+                </li>
+                <li data-i18n-en="Presentation confer: 3:00" data-i18n-fr="Caucus de présentation : 3:00">Presentation confer: 3:00</li>
+                <li data-i18n-en="Presentation: 5:00" data-i18n-fr="Présentation : 5:00">Presentation: 5:00</li>
+                <li data-i18n-en="Commentary confer: 3:00" data-i18n-fr="Caucus de commentaire : 3:00">Commentary confer: 3:00</li>
+                <li data-i18n-en="Commentary: 3:00" data-i18n-fr="Commentaire : 3:00">Commentary: 3:00</li>
+                <li data-i18n-en="Response confer: 3:00" data-i18n-fr="Caucus de réplique : 3:00">Response confer: 3:00</li>
+                <li data-i18n-en="Response: 3:00" data-i18n-fr="Réplique : 3:00">Response: 3:00</li>
+                <li data-i18n-en="Judges' period total: 10:00" data-i18n-fr="Période des juges totale : 10:00">Judges' period total: 10:00</li>
+                <li data-i18n-en="Each judge question: 1:00" data-i18n-fr="Chaque question de juge : 1:00">Each judge question: 1:00</li>
+                <li data-i18n-en="Each judge answer: 2:20" data-i18n-fr="Chaque réponse à un juge : 2:20">Each judge answer: 2:20</li>
+              </ul>
             </div>
-            <div
-              data-i18n-en="Upload two cases, start the match, and the moderator will guide the round."
-              data-i18n-fr="Téléversez deux cas, démarrez le match, et le modérateur guidera la ronde."
-            >
-              Upload two cases, start the match, and the moderator will guide the round.
+          </details>
+
+          <details class="setup-details" open>
+            <summary data-i18n-en="Case #1" data-i18n-fr="Cas 1">Case #1</summary>
+
+            <div class="control-group">
+              <label for="case1TitleInput">
+                <span data-i18n-en="Case title" data-i18n-fr="Titre du cas">Case title</span>
+              </label>
+              <input id="case1TitleInput" type="text" />
             </div>
-          </article>
-        </div>
 
-        <div
-          id="statusLine"
-          class="status-line"
-          data-i18n-en="Ready."
-          data-i18n-fr="Prêt."
-        >
-          Ready.
-        </div>
-
-        <form id="composerForm" class="composer">
-          <div id="liveVoiceWrap" class="live-voice-wrap" hidden>
-            <div
-              class="bubble-label"
-              data-i18n-en="Live voice input"
-              data-i18n-fr="Saisie vocale en direct"
-            >
-              Live voice input
+            <div class="control-group">
+              <label for="case1QuestionInput">
+                <span data-i18n-en="Moderator question" data-i18n-fr="Question du modérateur">Moderator question</span>
+              </label>
+              <input id="case1QuestionInput" type="text" />
             </div>
-            <div
-              id="liveVoicePreview"
-              class="live-voice-preview"
-              data-i18n-en="Listening..."
-              data-i18n-fr="Écoute..."
-            >
-              Listening...
+
+            <div class="control-group">
+              <label for="case1FileInput">
+                <span data-i18n-en="Upload case text (.txt, .md, .text)" data-i18n-fr="Téléverser le texte du cas (.txt, .md, .text)">
+                  Upload case text (.txt, .md, .text)
+                </span>
+              </label>
+              <input id="case1FileInput" type="file" accept=".txt,.md,.text,text/plain,text/markdown" />
             </div>
-          </div>
 
-          <textarea id="messageInput"></textarea>
+            <div class="control-group">
+              <label for="case1TextInput">
+                <span data-i18n-en="Case text" data-i18n-fr="Texte du cas">Case text</span>
+              </label>
+              <textarea id="case1TextInput" class="case-editor"></textarea>
+            </div>
+          </details>
 
-          <div class="composer-row">
-            <button id="micBtn" class="mic-btn" type="button">● Record Voice</button>
-            <button id="submitTurnBtn" class="primary-btn" type="submit">
-              Submit Turn
-            </button>
-          </div>
-        </form>
-      </main>
+          <details class="setup-details" open>
+            <summary data-i18n-en="Case #2" data-i18n-fr="Cas 2">Case #2</summary>
 
-      <aside class="right-rail">
-        <section class="side-card tracker-side">
-          <div class="progress-card">
-            <div class="progress-header">
-              <div class="phase-copy">
-                <div
-                  class="panel-kicker"
-                  data-i18n-en="Live match tracker"
-                  data-i18n-fr="Suivi du match en direct"
-                >
-                  Live match tracker
-                </div>
-                <div id="currentPhaseTitle" class="phase-title">Setup</div>
-                <div id="currentPhaseMeta" class="phase-meta">
-                  Upload two cases and start the match.
-                </div>
+            <div class="control-group">
+              <label for="case2TitleInput">
+                <span data-i18n-en="Case title" data-i18n-fr="Titre du cas">Case title</span>
+              </label>
+              <input id="case2TitleInput" type="text" />
+            </div>
+
+            <div class="control-group">
+              <label for="case2QuestionInput">
+                <span data-i18n-en="Moderator question" data-i18n-fr="Question du modérateur">Moderator question</span>
+              </label>
+              <input id="case2QuestionInput" type="text" />
+            </div>
+
+            <div class="control-group">
+              <label for="case2FileInput">
+                <span data-i18n-en="Upload case text (.txt, .md, .text)" data-i18n-fr="Téléverser le texte du cas (.txt, .md, .text)">
+                  Upload case text (.txt, .md, .text)
+                </span>
+              </label>
+              <input id="case2FileInput" type="file" accept=".txt,.md,.text,text/plain,text/markdown" />
+            </div>
+
+            <div class="control-group">
+              <label for="case2TextInput">
+                <span data-i18n-en="Case text" data-i18n-fr="Texte du cas">Case text</span>
+              </label>
+              <textarea id="case2TextInput" class="case-editor"></textarea>
+            </div>
+          </details>
+        </aside>
+      </div>
+    </section>
+
+    <section id="matchScreen" class="screen-view match-screen" hidden>
+      <div class="arena-grid live-layout">
+        <aside class="left-rail">
+          <section class="side-card live-summary-side">
+            <div class="live-column-brand" aria-label="Site branding">
+              <img data-logo-slot class="site-logo live-column-logo" alt="Ethics Bowl logo" hidden />
+              <div data-logo-fallback class="site-logo-fallback live-column-logo-fallback">Ethics Bowl</div>
+            </div>
+
+            <div class="timer-panel">
+              <div class="panel-kicker" data-i18n-en="Current phase timer" data-i18n-fr="Minuterie de la phase actuelle">
+                Current phase timer
               </div>
+              <div id="timerDisplay" class="timer-display">--:--</div>
+              <div id="timerHint" class="small-note">No active timed phase yet.</div>
 
-              <div class="side-actions">
+              <div class="button-cluster" style="margin-top:12px;">
                 <button
-                  id="nextActionBtn"
+                  id="pauseTimerBtn"
                   class="secondary-btn"
                   type="button"
-                  data-i18n-en="Advance / Generate"
-                  data-i18n-fr="Avancer / Générer"
+                  data-i18n-en="Pause"
+                  data-i18n-fr="Pause"
                 >
-                  Advance / Generate
+                  Pause
+                </button>
+                <button
+                  id="resumeTimerBtn"
+                  class="secondary-btn"
+                  type="button"
+                  data-i18n-en="Resume"
+                  data-i18n-fr="Reprendre"
+                >
+                  Resume
+                </button>
+                <button
+                  id="resetTimerBtn"
+                  class="ghost-btn"
+                  type="button"
+                  data-i18n-en="Reset Phase Timer"
+                  data-i18n-fr="Réinitialiser la minuterie"
+                >
+                  Reset Phase Timer
+                </button>
+              </div>
+
+              <div
+                class="small-note"
+                style="margin-top:10px;"
+                data-i18n-en="Timed phases begin only after the moderator finishes speaking, and moderator-only transitions advance automatically."
+                data-i18n-fr="Les phases minutées commencent seulement quand le modérateur a fini de parler, et les transitions réservées au modérateur avancent automatiquement."
+              >
+                Timed phases begin only after the moderator finishes speaking, and moderator-only transitions advance automatically.
+              </div>
+            </div>
+
+            <div class="progress-card">
+              <div
+                class="panel-kicker"
+                data-i18n-en="Live match overview"
+                data-i18n-fr="Vue d’ensemble du match en direct"
+              >
+                Live match overview
+              </div>
+              <div id="matchSetupSummary" class="match-summary-grid"></div>
+
+              <div class="button-cluster" style="margin-top: 14px;">
+                <button
+                  id="newMatchBtn"
+                  class="ghost-btn"
+                  type="button"
+                  data-i18n-en="Start New Match"
+                  data-i18n-fr="Nouveau match"
+                >
+                  Start New Match
                 </button>
               </div>
             </div>
+          </section>
 
-            <ul id="phaseList" class="phase-list tracker-phase-list">
-              <li class="phase-item">No phases yet.</li>
-            </ul>
-          </div>
-        </section>
+          <section class="case-reference-side" aria-label="Case reference">
+            <details id="matchCase1Card" class="match-case-card case-reference-card">
+              <summary id="matchCase1Summary">Case #1</summary>
+              <div class="match-case-body">
+                <div id="matchCase1Meta" class="phase-meta"></div>
+                <div id="matchCase1Question" class="match-case-question"></div>
+                <div id="matchCase1Text" class="match-case-text"></div>
+              </div>
+            </details>
 
-        <section class="side-card judge-side">
-          <h2 data-i18n-en="Judges" data-i18n-fr="Juges">Judges</h2>
+            <details id="matchCase2Card" class="match-case-card case-reference-card">
+              <summary id="matchCase2Summary">Case #2</summary>
+              <div class="match-case-body">
+                <div id="matchCase2Meta" class="phase-meta"></div>
+                <div id="matchCase2Question" class="match-case-question"></div>
+                <div id="matchCase2Text" class="match-case-text"></div>
+              </div>
+            </details>
+          </section>
+        </aside>
 
-          <div id="aiJudgePanel" class="judge-mode-card">
-            <div class="judge-copy">
-              <div class="phase-title" style="margin-bottom: 8px;" data-i18n-en="AI judges active" data-i18n-fr="Juges IA actifs">
-                AI judges active
+        <main class="chat-card">
+          <div id="chat" class="chat-log">
+            <article id="emptyState" class="empty-state">
+              <div
+                data-i18n-en="No messages yet."
+                data-i18n-fr="Aucun message pour le moment."
+                style="font-weight:700;margin-bottom:6px;"
+              >
+                No messages yet.
               </div>
               <div
-                class="small-note"
-                data-i18n-en="Three AI judges will ask one question each during each judge period and generate final scorecards at the end."
-                data-i18n-fr="Trois juges IA poseront une question chacun pendant chaque période des juges et produiront les fiches finales à la fin."
+                data-i18n-en="Upload two cases, start the match, and the moderator will guide the round."
+                data-i18n-fr="Téléversez deux cas, démarrez le match, et le modérateur guidera la ronde."
               >
-                Three AI judges will ask one question each during each judge period and generate final scorecards at the end.
+                Upload two cases, start the match, and the moderator will guide the round.
               </div>
-            </div>
+            </article>
           </div>
 
-          <div id="humanJudgePanel" class="judge-mode-card">
-            <div class="judge-copy">
-              <div class="status-chip active" data-i18n-en="Human judges active" data-i18n-fr="Juges humains actifs">
-                Human judges active
+          <div
+            id="statusLine"
+            class="status-line"
+            data-i18n-en="Ready."
+            data-i18n-fr="Prêt."
+          >
+            Ready.
+          </div>
+
+          <form id="composerForm" class="composer">
+            <div id="liveVoiceWrap" class="live-voice-wrap" hidden>
+              <div
+                class="bubble-label"
+                data-i18n-en="Live voice input"
+                data-i18n-fr="Saisie vocale en direct"
+              >
+                Live voice input
               </div>
               <div
-                class="small-note"
-                data-i18n-en="During each judge-question phase, enter the active judge’s question and click the button for that judge. At the end, enter the three judges’ scores to compute the result."
-                data-i18n-fr="Pendant chaque phase de question des juges, entrez la question du juge actif et cliquez sur le bouton de ce juge. À la fin, entrez les notes des trois juges pour calculer le résultat."
+                id="liveVoicePreview"
+                class="live-voice-preview"
+                data-i18n-en="Listening..."
+                data-i18n-fr="Écoute..."
               >
-                During each judge-question phase, enter the active judge’s question and click the button for that judge. At the end, enter the three judges’ scores to compute the result.
+                Listening...
               </div>
             </div>
 
-            <div class="judge-entry">
-              <div class="judge-entry-head">
-                <input id="judge1Name" type="text" value="Judge 1" />
-                <div id="judge1Status" class="status-chip subtle">Idle</div>
-              </div>
-              <button class="secondary-btn ask-judge-btn" type="button" data-judge="1">Ask Judge 1 Question</button>
-              <div class="control-group">
-                <label for="judge1Question">
-                  <span data-i18n-en="Question" data-i18n-fr="Question">Question</span>
-                </label>
-                <textarea id="judge1Question"></textarea>
-              </div>
-              <div class="score-row">
-                <label>
-                  <span class="participant-one-score-label">Participant 1</span> /60
-                  <input id="judge1HumanScore" type="number" min="0" max="60" step="1" />
-                </label>
-                <label>
-                  <span class="participant-two-score-label">Participant 2</span> /60
-                  <input id="judge1AiScore" type="number" min="0" max="60" step="1" />
-                </label>
-              </div>
-              <div class="control-group">
-                <label for="judge1Comment">
-                  <span data-i18n-en="Comment" data-i18n-fr="Commentaire">Comment</span>
-                </label>
-                <textarea id="judge1Comment"></textarea>
-              </div>
-            </div>
+            <textarea id="messageInput"></textarea>
 
-            <div class="judge-entry">
-              <div class="judge-entry-head">
-                <input id="judge2Name" type="text" value="Judge 2" />
-                <div id="judge2Status" class="status-chip subtle">Idle</div>
-              </div>
-              <button class="secondary-btn ask-judge-btn" type="button" data-judge="2">Ask Judge 2 Question</button>
-              <div class="control-group">
-                <label for="judge2Question">
-                  <span data-i18n-en="Question" data-i18n-fr="Question">Question</span>
-                </label>
-                <textarea id="judge2Question"></textarea>
-              </div>
-              <div class="score-row">
-                <label>
-                  <span class="participant-one-score-label">Participant 1</span> /60
-                  <input id="judge2HumanScore" type="number" min="0" max="60" step="1" />
-                </label>
-                <label>
-                  <span class="participant-two-score-label">Participant 2</span> /60
-                  <input id="judge2AiScore" type="number" min="0" max="60" step="1" />
-                </label>
-              </div>
-              <div class="control-group">
-                <label for="judge2Comment">
-                  <span data-i18n-en="Comment" data-i18n-fr="Commentaire">Comment</span>
-                </label>
-                <textarea id="judge2Comment"></textarea>
-              </div>
-            </div>
-
-            <div class="judge-entry">
-              <div class="judge-entry-head">
-                <input id="judge3Name" type="text" value="Judge 3" />
-                <div id="judge3Status" class="status-chip subtle">Idle</div>
-              </div>
-              <button class="secondary-btn ask-judge-btn" type="button" data-judge="3">Ask Judge 3 Question</button>
-              <div class="control-group">
-                <label for="judge3Question">
-                  <span data-i18n-en="Question" data-i18n-fr="Question">Question</span>
-                </label>
-                <textarea id="judge3Question"></textarea>
-              </div>
-              <div class="score-row">
-                <label>
-                  <span class="participant-one-score-label">Participant 1</span> /60
-                  <input id="judge3HumanScore" type="number" min="0" max="60" step="1" />
-                </label>
-                <label>
-                  <span class="participant-two-score-label">Participant 2</span> /60
-                  <input id="judge3AiScore" type="number" min="0" max="60" step="1" />
-                </label>
-              </div>
-              <div class="control-group">
-                <label for="judge3Comment">
-                  <span data-i18n-en="Comment" data-i18n-fr="Commentaire">Comment</span>
-                </label>
-                <textarea id="judge3Comment"></textarea>
-              </div>
-            </div>
-
-            <div class="button-cluster" style="margin-top:12px;">
-              <button
-                id="computeHumanResultBtn"
-                class="primary-btn"
-                type="button"
-                data-i18n-en="Compute Result from Human Scores"
-                data-i18n-fr="Calculer le résultat à partir des notes humaines"
-              >
-                Compute Result from Human Scores
+            <div class="composer-row">
+              <button id="micBtn" class="mic-btn" type="button">● Record Voice</button>
+              <button id="submitTurnBtn" class="primary-btn" type="submit">
+                Submit Turn
               </button>
             </div>
-          </div>
+          </form>
+        </main>
 
-          <div class="results-card">
-            <div class="panel-kicker" data-i18n-en="Scoreboard" data-i18n-fr="Tableau des résultats">
-              Scoreboard
+        <aside class="right-rail">
+          <section class="side-card tracker-side">
+            <div class="progress-card tracker-progress-card">
+              <div class="progress-header">
+                <div class="phase-copy">
+                  <div
+                    class="panel-kicker"
+                    data-i18n-en="Live match tracker"
+                    data-i18n-fr="Suivi du match en direct"
+                  >
+                    Live match tracker
+                  </div>
+                  <div id="currentPhaseTitle" class="phase-title">Setup</div>
+                  <div id="currentPhaseMeta" class="phase-meta">
+                    Upload two cases and start the match.
+                  </div>
+                </div>
+
+                <div class="side-actions">
+                  <button
+                    id="nextActionBtn"
+                    class="secondary-btn"
+                    type="button"
+                    data-i18n-en="Advance / Generate"
+                    data-i18n-fr="Avancer / Générer"
+                  >
+                    Advance / Generate
+                  </button>
+                </div>
+              </div>
+
+              <ul id="phaseList" class="phase-list tracker-phase-list">
+                <li class="phase-item">No phases yet.</li>
+              </ul>
             </div>
-            <div id="scoreSummary" class="score-note">No scores yet.</div>
-            <div id="scoreCards" class="score-cards"></div>
-          </div>
-        </section>
-      </aside>
-    </div>
+          </section>
+
+          <section class="side-card judge-side">
+            <div id="judgePanelDefault" class="judge-panel-default">
+              <h2 data-i18n-en="Judges" data-i18n-fr="Juges">Judges</h2>
+
+              <div id="aiJudgePanel" class="judge-mode-card">
+                <div class="judge-copy">
+                  <div class="phase-title" style="margin-bottom: 8px;" data-i18n-en="AI judges active" data-i18n-fr="Juges IA actifs">
+                    AI judges active
+                  </div>
+                  <div
+                    class="small-note"
+                    data-i18n-en="Three AI judges will ask one question each during each judge period and generate final scorecards at the end."
+                    data-i18n-fr="Trois juges IA poseront une question chacun pendant chaque période des juges et produiront les fiches finales à la fin."
+                  >
+                    Three AI judges will ask one question each during each judge period and generate final scorecards at the end.
+                  </div>
+                </div>
+              </div>
+
+              <div id="humanJudgePanel" class="judge-mode-card">
+                <div class="judge-copy">
+                  <div class="status-chip active" data-i18n-en="Human judges active" data-i18n-fr="Juges humains actifs">
+                    Human judges active
+                  </div>
+                  <div
+                    class="small-note"
+                    data-i18n-en="During each judge-question phase, enter the active judge’s question and click the button for that judge. At the end, enter the three judges’ scores to compute the result."
+                    data-i18n-fr="Pendant chaque phase de question des juges, entrez la question du juge actif et cliquez sur le bouton de ce juge. À la fin, entrez les notes des trois juges pour calculer le résultat."
+                  >
+                    During each judge-question phase, enter the active judge’s question and click the button for that judge. At the end, enter the three judges’ scores to compute the result.
+                  </div>
+                </div>
+
+                <div class="judge-entry">
+                  <div class="judge-entry-head">
+                    <input id="judge1Name" type="text" value="Judge 1" />
+                    <div id="judge1Status" class="status-chip subtle">Idle</div>
+                  </div>
+                  <button class="secondary-btn ask-judge-btn" type="button" data-judge="1">Ask Judge 1 Question</button>
+                  <div class="control-group">
+                    <label for="judge1Question">
+                      <span data-i18n-en="Question" data-i18n-fr="Question">Question</span>
+                    </label>
+                    <textarea id="judge1Question"></textarea>
+                  </div>
+                  <div class="score-row">
+                    <label>
+                      <span class="participant-one-score-label">Participant 1</span> /60
+                      <input id="judge1HumanScore" type="number" min="0" max="60" step="1" />
+                    </label>
+                    <label>
+                      <span class="participant-two-score-label">Participant 2</span> /60
+                      <input id="judge1AiScore" type="number" min="0" max="60" step="1" />
+                    </label>
+                  </div>
+                  <div class="control-group">
+                    <label for="judge1Comment">
+                      <span data-i18n-en="Comment" data-i18n-fr="Commentaire">Comment</span>
+                    </label>
+                    <textarea id="judge1Comment"></textarea>
+                  </div>
+                </div>
+
+                <div class="judge-entry">
+                  <div class="judge-entry-head">
+                    <input id="judge2Name" type="text" value="Judge 2" />
+                    <div id="judge2Status" class="status-chip subtle">Idle</div>
+                  </div>
+                  <button class="secondary-btn ask-judge-btn" type="button" data-judge="2">Ask Judge 2 Question</button>
+                  <div class="control-group">
+                    <label for="judge2Question">
+                      <span data-i18n-en="Question" data-i18n-fr="Question">Question</span>
+                    </label>
+                    <textarea id="judge2Question"></textarea>
+                  </div>
+                  <div class="score-row">
+                    <label>
+                      <span class="participant-one-score-label">Participant 1</span> /60
+                      <input id="judge2HumanScore" type="number" min="0" max="60" step="1" />
+                    </label>
+                    <label>
+                      <span class="participant-two-score-label">Participant 2</span> /60
+                      <input id="judge2AiScore" type="number" min="0" max="60" step="1" />
+                    </label>
+                  </div>
+                  <div class="control-group">
+                    <label for="judge2Comment">
+                      <span data-i18n-en="Comment" data-i18n-fr="Commentaire">Comment</span>
+                    </label>
+                    <textarea id="judge2Comment"></textarea>
+                  </div>
+                </div>
+
+                <div class="judge-entry">
+                  <div class="judge-entry-head">
+                    <input id="judge3Name" type="text" value="Judge 3" />
+                    <div id="judge3Status" class="status-chip subtle">Idle</div>
+                  </div>
+                  <button class="secondary-btn ask-judge-btn" type="button" data-judge="3">Ask Judge 3 Question</button>
+                  <div class="control-group">
+                    <label for="judge3Question">
+                      <span data-i18n-en="Question" data-i18n-fr="Question">Question</span>
+                    </label>
+                    <textarea id="judge3Question"></textarea>
+                  </div>
+                  <div class="score-row">
+                    <label>
+                      <span class="participant-one-score-label">Participant 1</span> /60
+                      <input id="judge3HumanScore" type="number" min="0" max="60" step="1" />
+                    </label>
+                    <label>
+                      <span class="participant-two-score-label">Participant 2</span> /60
+                      <input id="judge3AiScore" type="number" min="0" max="60" step="1" />
+                    </label>
+                  </div>
+                  <div class="control-group">
+                    <label for="judge3Comment">
+                      <span data-i18n-en="Comment" data-i18n-fr="Commentaire">Comment</span>
+                    </label>
+                    <textarea id="judge3Comment"></textarea>
+                  </div>
+                </div>
+
+                <div class="button-cluster" style="margin-top:12px;">
+                  <button
+                    id="computeHumanResultBtn"
+                    class="primary-btn"
+                    type="button"
+                    data-i18n-en="Compute Result from Human Scores"
+                    data-i18n-fr="Calculer le résultat à partir des notes humaines"
+                  >
+                    Compute Result from Human Scores
+                  </button>
+                </div>
+              </div>
+
+              <div class="results-card">
+                <div class="panel-kicker" data-i18n-en="Scoreboard" data-i18n-fr="Tableau des résultats">
+                  Scoreboard
+                </div>
+                <div id="scoreSummary" class="score-note">No scores yet.</div>
+                <div id="scoreCards" class="score-cards"></div>
+              </div>
+            </div>
+
+            <div id="coinTossCard" class="coin-toss-card judge-coin-toss-card" hidden>
+              <div
+                class="panel-kicker"
+                data-i18n-en="Coin toss"
+                data-i18n-fr="Tirage"
+              >
+                Coin toss
+              </div>
+              <div
+                id="coinTossStatus"
+                class="small-note"
+                data-i18n-en="The moderator is preparing the coin toss."
+                data-i18n-fr="Le modérateur prépare le tirage."
+              >
+                The moderator is preparing the coin toss.
+              </div>
+
+              <div id="coinTossAnimation" class="coin-toss-animation" aria-hidden="true">
+                <div class="coin-toss-shadow"></div>
+                <div id="coinTossCoin" class="coin-toss-coin">
+                  <div class="coin-face coin-face-front">H</div>
+                  <div class="coin-face coin-face-back">T</div>
+                </div>
+              </div>
+
+              <div id="coinChoicePanel" class="coin-choice-panel" hidden>
+                <div class="control-group">
+                  <label>
+                    <span data-i18n-en="Coin toss choice" data-i18n-fr="Choix après le tirage">
+                      Coin toss choice
+                    </span>
+                  </label>
+                  <div
+                    class="small-note"
+                    data-i18n-en="Participant 1 won the toss. Choose whether Participant 1 will lead or pass on Case #1."
+                    data-i18n-fr="Le participant 1 a gagné le tirage. Choisissez s’il mènera ou passera au cas 1."
+                  >
+                    Participant 1 won the toss. Choose whether Participant 1 will lead or pass on Case #1.
+                  </div>
+                </div>
+
+                <div class="button-cluster">
+                  <button
+                    id="leadBtn"
+                    class="secondary-btn"
+                    type="button"
+                    data-i18n-en="Lead Case #1"
+                    data-i18n-fr="Mener le cas 1"
+                  >
+                    Lead Case #1
+                  </button>
+
+                  <button
+                    id="passBtn"
+                    class="secondary-btn"
+                    type="button"
+                    data-i18n-en="Pass Case #1"
+                    data-i18n-fr="Passer le cas 1"
+                  >
+                    Pass Case #1
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </section>
   </div>
 
   <script>
