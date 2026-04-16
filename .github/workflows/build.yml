@@ -1,50 +1,24 @@
-name: Build Electron App
+name: Remove old artifacts
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
+  schedule:
+    # Every day at 1am
+    - cron: '0 1 * * *'
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            command: npm run dist:linux
-            artifact_name: linux-build
-          - os: windows-latest
-            command: npm run dist:win
-            artifact_name: windows-build
-          - os: macos-latest
-            command: npm run dist:mac
-            artifact_name: macos-build
+  remove-old-artifacts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
-    runs-on: ${{ matrix.os }}
+    # For private repos
+    permissions:
+      actions: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build app
-        run: ${{ matrix.command }}
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: dist/**
-          if-no-files-found: error
+    - name: Remove old artifacts
+      uses: c-hive/gha-remove-artifacts@v1
+      with:
+        age: '5 days' # '<number> <unit>', e.g. 5 days, 2 years, 90 seconds, parsed by Moment.js
+        # Optional inputs
+        # skip-tags: true
+        # skip-recent: 5
