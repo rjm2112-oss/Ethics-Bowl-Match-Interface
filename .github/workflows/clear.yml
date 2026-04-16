@@ -1,5 +1,10 @@
 name: Remove old artifacts
 
+on:
+  workflow_dispatch:   # run it manually
+  schedule:
+    - cron: '0 1 * * *'
+
 jobs:
   remove-old-artifacts:
     runs-on: ubuntu-latest
