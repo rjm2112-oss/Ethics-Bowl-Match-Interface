@@ -479,6 +479,7 @@ const state = {
     phaseReady: false,
     phaseAwaitingPlaybackForId: "",
     pendingAutoActionPhaseId: "",
+    autoGenerationBlockedPhaseId: "",
     matchRunId: 0,
     leadByCase: { 1: "human", 2: "ai" },
     names: { human: "Human", ai: "AI Opponent" },
@@ -503,6 +504,7 @@ const state = {
     aiJudgeQuestionPreparationPromises: {},
     aiJudgeQuestionPreparationErrors: {},
     aiPreparedTurns: {},
+    aiPreparationSnapshots: {},
     aiPreparationPromises: {},
     aiPreparationErrors: {},
     mainComposerHydratedPhaseId: "",
@@ -1209,6 +1211,17 @@ function setBusy(flag) {
     state.busy = !!flag;
     refreshControls();
     if (!state.busy) maybeAutoTriggerCurrentPhase();
+}
+
+function blockAutoGenerationForPhase(phaseId) {
+    if (!phaseId) return;
+    state.autoGenerationBlockedPhaseId = phaseId;
+}
+
+function clearAutoGenerationBlock(phaseId = "") {
+    if (!phaseId || state.autoGenerationBlockedPhaseId === phaseId) {
+        state.autoGenerationBlockedPhaseId = "";
+    }
 }
 
 function formatBubbleTime(isoString) {
@@ -2838,12 +2851,47 @@ function getPreparedAiTurnText(phaseId) {
     return sanitizeText(state.aiPreparedTurns[phaseId]?.text || "");
 }
 
+function getAiPreparationSnapshot(phaseId) {
+    const snapshot = state.aiPreparationSnapshots[phaseId];
+    if (!snapshot) return { text: "", completedPasses: 0, baselineRevisionWordCount: 0 };
+    return {
+        text: sanitizeText(snapshot.text),
+        completedPasses: Math.max(0, Math.floor(Number(snapshot.completedPasses) || 0)),
+        baselineRevisionWordCount: Math.max(0, Math.floor(Number(snapshot.baselineRevisionWordCount) || 0))
+    };
+}
+
+function cacheAiPreparationSnapshot(phaseId, text, completedPasses, baselineRevisionWordCount = 0) {
+    const clean = sanitizeText(text);
+    if (!phaseId || !clean) return;
+    state.aiPreparationSnapshots[phaseId] = {
+        text: clean,
+        completedPasses: Math.max(0, Math.floor(Number(completedPasses) || 0)),
+        baselineRevisionWordCount: Math.max(0, Math.floor(Number(baselineRevisionWordCount) || 0)),
+        updatedAt: new Date().toISOString()
+    };
+}
+
+function clearAiPreparationSnapshot(phaseId) {
+    if (!phaseId) return;
+    delete state.aiPreparationSnapshots[phaseId];
+}
+
+function getAiTurnMaxOutputTokens(phase) {
+    if (!phase) return 2200;
+    if (phase.kind === "judgeAnswer") return 1800;
+    if (phase.subtype === "presentation") return 4000;
+    if (phase.subtype === "commentary" || phase.subtype === "response") return 2800;
+    return 2200;
+}
+
 /* --------------------- AI prep / judge prep / scoring helpers --------------------- */
 /* unchanged logic, only locale-aware visible strings and labels updated below */
 
 async function maybePrepareAiTurnForPhase(phase, options = {}) {
     const phaseId = phase?.id || "";
     const revisionPasses = Math.max(0, Math.floor(Number(options?.revisionPasses) || 0));
+    const totalPasses = 1 + revisionPasses;
     if (!phaseId || !isAiControlledRole(phase.speaker)) return "";
     const cached = getPreparedAiTurnText(phaseId);
     if (cached) return cached;
@@ -2852,36 +2900,56 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
     let trackedPromise = null;
     trackedPromise = (async () => {
         try {
-            const maxTokens = phase.kind === "judgeAnswer" ? 1500 : phase.subtype === "presentation" ? 2000 : 2000;
+            const maxTokens = getAiTurnMaxOutputTokens(phase);
             const boundJudgeQuestion = phase.kind === "judgeAnswer" ? getJudgeQuestionForAnswerPhase(phase) : "";
             if (phase.kind === "judgeAnswer" && !boundJudgeQuestion) {
                 throw new Error(isFrenchLocale()
                 ? `La question du ${judgeLabel(phase.judgeNumber)} manque, donc ${speakerName(phase.speaker)} ne peut pas encore y répondre.`
                 : `Judge ${phase.judgeNumber}'s question is missing, so ${speakerName(phase.speaker)} cannot answer it yet.`);
             }
-            let text = sanitizeText(await callOpenAI({
-                model: getParticipantModel(phase.speaker),
-                                                     systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
-                                                     userPrompt: buildAiTurnPrompt(phase),
-                                                     maxTokens
-            }));
-            if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
-            if (phase.kind === "judgeAnswer") {
-                const currentBoundJudgeQuestion = getJudgeQuestionForAnswerPhase(phase);
-                if (sanitizeText(boundJudgeQuestion) !== sanitizeText(currentBoundJudgeQuestion)) {
-                    throw new Error(l("The judge question changed while the AI answer was being prepared.", "La question du juge a changé pendant la préparation de la réponse IA."));
-                }
-                text = sanitizeText(await enforceDirectJudgeAnswer(phase, text));
+            let { text, completedPasses, baselineRevisionWordCount } = getAiPreparationSnapshot(phaseId);
+            completedPasses = Math.min(totalPasses, completedPasses);
+
+            if (completedPasses < 1 || !text) {
+                text = sanitizeText(await callOpenAI({
+                    model: getParticipantModel(phase.speaker),
+                                                         systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
+                                                         userPrompt: buildAiTurnPrompt(phase),
+                                                         maxTokens,
+                                                         reasoningEffort: "low"
+                }));
                 if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
+                if (phase.kind === "judgeAnswer") {
+                    const currentBoundJudgeQuestion = getJudgeQuestionForAnswerPhase(phase);
+                    if (sanitizeText(boundJudgeQuestion) !== sanitizeText(currentBoundJudgeQuestion)) {
+                        throw new Error(l("The judge question changed while the AI answer was being prepared.", "La question du juge a changé pendant la préparation de la réponse IA."));
+                    }
+                    text = sanitizeText(await enforceDirectJudgeAnswer(phase, text));
+                    if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
+                }
+                text = sanitizeText(await enforcePhaseWordCount(phase, text, { mode: "initial" }));
+                baselineRevisionWordCount = countWords(text);
+                completedPasses = 1;
+                cacheAiPreparationSnapshot(phaseId, text, completedPasses, baselineRevisionWordCount);
             }
-            text = sanitizeText(await enforcePhaseWordCount(phase, text, { mode: "initial" }));
-            const baselineRevisionWordCount = countWords(text);
-            for (let revisionNumber = 1; revisionNumber <= revisionPasses; revisionNumber += 1) {
+
+            baselineRevisionWordCount = Math.max(0, baselineRevisionWordCount || countWords(text));
+
+            if (completedPasses >= totalPasses && text) {
+                if (runId !== state.matchRunId) return "";
+                state.aiPreparedTurns[phaseId] = { text, preparedAt: new Date().toISOString(), passCount: totalPasses };
+                clearAiPreparationSnapshot(phaseId);
+                delete state.aiPreparationErrors[phaseId];
+                return text;
+            }
+
+            for (let revisionNumber = Math.max(1, completedPasses); revisionNumber <= revisionPasses; revisionNumber += 1) {
                 const revisedText = sanitizeText(await callOpenAI({
                     model: getParticipantModel(phase.speaker),
                                                                   systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                                   userPrompt: buildAiTurnRevisionPrompt(phase, text, revisionNumber, revisionPasses, baselineRevisionWordCount),
-                                                                  maxTokens
+                                                                  maxTokens,
+                                                                  reasoningEffort: "low"
                 }));
                 if (!revisedText) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
                 text = revisedText;
@@ -2890,9 +2958,12 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
                     if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
                 }
                 text = sanitizeText(await enforcePhaseWordCount(phase, text, { mode: "revision", baselineWordCount: baselineRevisionWordCount }));
+                completedPasses = revisionNumber + 1;
+                cacheAiPreparationSnapshot(phaseId, text, completedPasses, baselineRevisionWordCount);
             }
             if (runId !== state.matchRunId) return "";
-            state.aiPreparedTurns[phaseId] = { text, preparedAt: new Date().toISOString(), passCount: 1 + revisionPasses };
+            state.aiPreparedTurns[phaseId] = { text, preparedAt: new Date().toISOString(), passCount: totalPasses };
+            clearAiPreparationSnapshot(phaseId);
             delete state.aiPreparationErrors[phaseId];
             return text;
         } catch (error) {
@@ -3146,6 +3217,7 @@ function maybeAutoTriggerCurrentPhase() {
     if (!phase || !state.phaseReady || state.completed) return;
     if (state.busy || state.isRecording || state.voiceFinalizePending) return;
     if (isCurrentPhaseAwaitingPlayback(phase)) return;
+    if (state.autoGenerationBlockedPhaseId === phase.id) return;
     if (phase.kind === "closing" && state.judgeMode === "ai") {
         scheduleNextActionForPhase(phase.id);
         return;
@@ -3610,8 +3682,60 @@ function extractTextFromResponseObject(responseObj) {
     return output.map(extractTextFromOutputItem).join("").trim();
 }
 
+function buildOpenAiEmptyTextError(responseObj) {
+    const status = String(responseObj?.status || "").trim();
+    const reason = String(responseObj?.incomplete_details?.reason || responseObj?.status_details?.reason || "").trim();
+    const message = String(
+        responseObj?.error?.message ||
+        responseObj?.incomplete_details?.message ||
+        responseObj?.status_details?.message ||
+        ""
+    ).trim();
+
+    if (reason === "max_output_tokens") {
+        return l(
+            "The model used its output budget before producing visible text. Try a lower reasoning setting or a higher output limit.",
+            "Le modèle a épuisé son budget de sortie avant de produire du texte visible. Essayez un niveau de raisonnement plus faible ou une limite de sortie plus élevée."
+        );
+    }
+    if (message) return message;
+    if (status && reason) {
+        return isFrenchLocale()
+        ? `Le modèle n’a renvoyé aucun texte (statut : ${status}, raison : ${reason}).`
+        : `The model returned no text (status: ${status}, reason: ${reason}).`;
+    }
+    if (status) {
+        return isFrenchLocale()
+        ? `Le modèle n’a renvoyé aucun texte (statut : ${status}).`
+        : `The model returned no text (status: ${status}).`;
+    }
+    return l("The model returned no text.", "Le modèle n’a renvoyé aucun texte.");
+}
+
 function modelSupportsReasoningEffort(modelName) {
     return /^gpt-5(?:[.-]|$)/i.test(String(modelName || ""));
+}
+
+function shouldRetryOpenAiResponseStatus(status) {
+    const code = Number(status);
+    return Number.isFinite(code) && code >= 500 && code < 600;
+}
+
+function shouldRetryOpenAiFetchError(error) {
+    if (!error) return false;
+    if (error.name === "AbortError") return false;
+    if (error instanceof TypeError) return true;
+    const message = String(error?.message || "").toLowerCase();
+    return !!message && (
+        message.includes("failed to fetch") ||
+        message.includes("networkerror") ||
+        message.includes("network error") ||
+        message.includes("load failed")
+    );
+}
+
+function getOpenAiRetryDelayMs(attemptNumber) {
+    return Math.min(1600, 350 * (2 ** Math.max(0, attemptNumber - 1)));
 }
 
 async function callOpenAI({
@@ -3645,24 +3769,47 @@ async function callOpenAI({
         };
     }
     if (reasoningEffort && modelSupportsReasoningEffort(resolvedModel)) body.reasoning = { effort: reasoningEffort };
-    const response = await fetch(OPENAI_RESPONSES_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify(body)
-    });
-    if (!response.ok) throw new Error(await parseApiError(response));
-    const data = await response.json();
-    if (jsonSchema) {
-        const structured = extractStructuredJsonFromResponseObject(data);
-        if (structured && typeof structured === "object") return structured;
+    const requestBody = JSON.stringify(body);
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        let response;
+        try {
+            response = await fetch(OPENAI_RESPONSES_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+                body: requestBody
+            });
+        } catch (error) {
+            if (!shouldRetryOpenAiFetchError(error) || attempt >= maxAttempts) throw error;
+            console.warn(`OpenAI request failed on attempt ${attempt} of ${maxAttempts}; retrying.`, error);
+            await delayMs(getOpenAiRetryDelayMs(attempt));
+            continue;
+        }
+
+        if (!response.ok) {
+            const apiError = await parseApiError(response);
+            if (!shouldRetryOpenAiResponseStatus(response.status) || attempt >= maxAttempts) {
+                throw new Error(apiError);
+            }
+            console.warn(`OpenAI request returned HTTP ${response.status} on attempt ${attempt} of ${maxAttempts}; retrying.`);
+            await delayMs(getOpenAiRetryDelayMs(attempt));
+            continue;
+        }
+
+        const data = await response.json();
+        if (jsonSchema) {
+            const structured = extractStructuredJsonFromResponseObject(data);
+            if (structured && typeof structured === "object") return structured;
+            const text = extractTextFromResponseObject(data);
+            const parsed = tryParseJsonString(text);
+            if (parsed && typeof parsed === "object") return parsed;
+            throw new Error(l("The model returned no structured JSON.", "Le modèle n’a renvoyé aucun JSON structuré."));
+        }
         const text = extractTextFromResponseObject(data);
-        const parsed = tryParseJsonString(text);
-        if (parsed && typeof parsed === "object") return parsed;
-        throw new Error(l("The model returned no structured JSON.", "Le modèle n’a renvoyé aucun JSON structuré."));
+        if (!text) throw new Error(buildOpenAiEmptyTextError(data));
+        return text;
     }
-    const text = extractTextFromResponseObject(data);
-    if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
-    return text;
+    throw new Error(l("The OpenAI request failed.", "La requête OpenAI a échoué."));
 }
 
 function stripJsonFence(raw) {
@@ -3851,6 +3998,7 @@ function storeJudgeQuestionForPhase(phase, question) {
     const answerPhaseId = getJudgeAnswerPhaseId(phase.caseNum, phase.judgeNumber);
     state.askedJudgeQuestions[answerPhaseId] = clean;
     delete state.aiPreparedTurns[answerPhaseId];
+    clearAiPreparationSnapshot(answerPhaseId);
     delete state.aiPreparationErrors[answerPhaseId];
     const prepKey = getAiJudgeQuestionPreparationKey(phase.caseNum, phase.judgeNumber);
     delete state.aiJudgeQuestionPreparationPromises[prepKey];
@@ -4275,7 +4423,7 @@ async function enforcePhaseWordCount(phase, draftText, options = {}) {
         model: getParticipantModel(phase.speaker),
                                                    systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                    userPrompt: prompt,
-                                                   maxTokens: phase.kind === "judgeAnswer" ? 1200 : phase.subtype === "presentation" ? 2000 : 2000,
+                                                   maxTokens: getAiTurnMaxOutputTokens(phase),
                                                    reasoningEffort: "low"
     }));
     return pickBetterWordCountDraft(draft, repaired, targetWordCount, allowedMin, allowedMax);
@@ -4356,6 +4504,7 @@ async function handleAiConferPhase(phase) {
         return true;
     } catch (error) {
         console.error(error);
+        blockAutoGenerationForPhase(phaseId);
         clearPhaseAwaitingPlayback(phaseId);
         setStatus(error?.message || l("Failed during AI conferral.", "Échec pendant le caucus IA."), true);
         return false;
@@ -4404,6 +4553,7 @@ async function generateAiTurnForPhase(phase) {
         return true;
     } catch (error) {
         console.error(error);
+        blockAutoGenerationForPhase(phaseId);
         clearPhaseAwaitingPlayback(phaseId);
         setStatus(error?.message || l("Failed to generate the AI turn.", "La génération du tour IA a échoué."), true);
         return false;
@@ -4461,6 +4611,7 @@ async function askAiJudgeQuestion(phase) {
         return true;
     } catch (error) {
         console.error(error);
+        blockAutoGenerationForPhase(phaseId);
         clearPhaseAwaitingPlayback(phaseId);
         setStatus(error?.message || l("Failed to generate the judge question.", "La génération de la question du juge a échoué."), true);
         return false;
@@ -5247,6 +5398,7 @@ function resetStateForNewMatch() {
     state.phaseReady = false;
     state.phaseAwaitingPlaybackForId = "";
     state.pendingAutoActionPhaseId = "";
+    state.autoGenerationBlockedPhaseId = "";
     state.aiFinalJudgeScorecards = {};
     state.aiFinalJudgeScoringPromises = {};
     state.aiFinalJudgeScoringErrors = {};
@@ -5259,6 +5411,7 @@ function resetStateForNewMatch() {
     state.aiJudgeQuestionPreparationPromises = {};
     state.aiJudgeQuestionPreparationErrors = {};
     state.aiPreparedTurns = {};
+    state.aiPreparationSnapshots = {};
     state.aiPreparationPromises = {};
     state.aiPreparationErrors = {};
     state.mainComposerHydratedPhaseId = "";
@@ -5409,6 +5562,7 @@ function beginStructuredMatch() {
     state.phaseReady = false;
     state.phaseAwaitingPlaybackForId = "";
     state.pendingAutoActionPhaseId = "";
+    state.autoGenerationBlockedPhaseId = "";
     state.mainComposerHydratedPhaseId = "";
     updateMatchSummaryPlaceholder();
     renderPhaseList();
@@ -5509,6 +5663,7 @@ function enterCurrentPhase() {
     state.phaseReady = false;
     clearPhaseAwaitingPlayback();
     state.pendingAutoActionPhaseId = "";
+    clearAutoGenerationBlock();
     state.mainComposerHydratedPhaseId = "";
     updatePhaseHeader();
     renderPhaseList();
@@ -5772,6 +5927,7 @@ async function handleNextAction() {
                 announceFinalResult(cards, "ai");
             } catch (error) {
                 console.error(error);
+                blockAutoGenerationForPhase(phase.id);
                 setStatus(error?.message || l("Failed to compute final AI-judge result.", "Le calcul du résultat final des juges IA a échoué."), true);
             }
             return;
