@@ -1298,11 +1298,11 @@ function getPhaseWordGuidance(phase) {
 
     if (phase.kind === "speech" && phase.subtype === "presentation") {
         return {
-            min: 645,
-            max: 670,
-            preferredTarget: 660,
+            min: 655,
+            max: 680,
+            preferredTarget: 665,
             revisionTolerance: 100,
-            label: "645-670 words"
+            label: "655-680 words"
         };
     }
 
@@ -2915,8 +2915,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
                     model: getParticipantModel(phase.speaker),
                                                          systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                          userPrompt: buildAiTurnPrompt(phase),
-                                                         maxTokens,
-                                                         reasoningEffort: "low"
+                                                         maxTokens
                 }));
                 if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
                 if (phase.kind === "judgeAnswer") {
@@ -2940,6 +2939,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
                 state.aiPreparedTurns[phaseId] = { text, preparedAt: new Date().toISOString(), passCount: totalPasses };
                 clearAiPreparationSnapshot(phaseId);
                 delete state.aiPreparationErrors[phaseId];
+                maybeCompletePreparedAiConferral();
                 return text;
             }
 
@@ -2948,8 +2948,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
                     model: getParticipantModel(phase.speaker),
                                                                   systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                                   userPrompt: buildAiTurnRevisionPrompt(phase, text, revisionNumber, revisionPasses, baselineRevisionWordCount),
-                                                                  maxTokens,
-                                                                  reasoningEffort: "low"
+                                                                  maxTokens
                 }));
                 if (!revisedText) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
                 text = revisedText;
@@ -2965,6 +2964,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
             state.aiPreparedTurns[phaseId] = { text, preparedAt: new Date().toISOString(), passCount: totalPasses };
             clearAiPreparationSnapshot(phaseId);
             delete state.aiPreparationErrors[phaseId];
+            maybeCompletePreparedAiConferral();
             return text;
         } catch (error) {
             if (runId === state.matchRunId) state.aiPreparationErrors[phaseId] = error?.message || l("Failed to prepare AI turn.", "La préparation du tour IA a échoué.");
@@ -2980,7 +2980,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
 function primeAiPreparationForPhase(phase) {
     const targetPhase = getLinkedAiPreparationTarget(phase);
     if (!targetPhase) return;
-    void maybePrepareAiTurnForPhase(targetPhase, { revisionPasses: 2 }).catch((error) => {
+    void maybePrepareAiTurnForPhase(targetPhase, { revisionPasses: 1 }).catch((error) => {
         console.error("AI preparation failed:", error);
     });
 }
@@ -3212,12 +3212,27 @@ function scheduleNextActionForPhase(phaseId, delayMs = 120) {
     }, delayMs);
 }
 
+function maybeCompletePreparedAiConferral(phase = getCurrentPhase()) {
+    const currentPhase = phase || getCurrentPhase();
+    if (!currentPhase || !state.phaseReady || state.completed) return false;
+    if (state.busy || state.isRecording || state.voiceFinalizePending) return false;
+    if (isCurrentPhaseAwaitingPlayback(currentPhase)) return false;
+    if (state.autoGenerationBlockedPhaseId === currentPhase.id) return false;
+    if (currentPhase.kind !== "confer" || !isAiControlledRole(currentPhase.speaker)) return false;
+    const targetPhase = getLinkedAiPreparationTarget(currentPhase);
+    if (!targetPhase || !getPreparedAiTurnText(targetPhase.id)) return false;
+    if (state.pendingAutoActionPhaseId === currentPhase.id) state.pendingAutoActionPhaseId = "";
+    void handleAiConferPhase(currentPhase);
+    return true;
+}
+
 function maybeAutoTriggerCurrentPhase() {
     const phase = getCurrentPhase();
     if (!phase || !state.phaseReady || state.completed) return;
     if (state.busy || state.isRecording || state.voiceFinalizePending) return;
     if (isCurrentPhaseAwaitingPlayback(phase)) return;
     if (state.autoGenerationBlockedPhaseId === phase.id) return;
+    if (maybeCompletePreparedAiConferral(phase)) return;
     if (phase.kind === "closing" && state.judgeMode === "ai") {
         scheduleNextActionForPhase(phase.id);
         return;
@@ -3419,10 +3434,11 @@ function setTimerForPhase(phase) {
     state.timer.running = true;
     state.timer.intervalId = window.setInterval(() => {
         if (!state.timer.running) return;
+        const currentPhase = getCurrentPhase();
+        if (maybeCompletePreparedAiConferral(currentPhase)) return;
         state.timer.remaining -= 1;
         if (state.timer.remaining < 0) state.timer.remaining = 0;
         timerDisplayEl.textContent = formatClock(state.timer.remaining);
-        const currentPhase = getCurrentPhase();
         const thresholds = warningThresholdsForPhase(currentPhase);
         thresholds.forEach((threshold) => {
             const key = `${currentPhase?.id || ""}:${threshold}`;
@@ -3744,7 +3760,8 @@ async function callOpenAI({
     userPrompt,
     maxTokens = 800,
     reasoningEffort = null,
-    jsonSchema = null
+    jsonSchema = null,
+    allowOutputBudgetRecovery = true
 }) {
     const apiKey = getApiKey();
     if (!apiKey) {
@@ -3806,7 +3823,24 @@ async function callOpenAI({
             throw new Error(l("The model returned no structured JSON.", "Le modèle n’a renvoyé aucun JSON structuré."));
         }
         const text = extractTextFromResponseObject(data);
-        if (!text) throw new Error(buildOpenAiEmptyTextError(data));
+        if (!text) {
+            const emptyTextReason = String(data?.incomplete_details?.reason || data?.status_details?.reason || "").trim();
+            if (allowOutputBudgetRecovery && emptyTextReason === "max_output_tokens" && !jsonSchema) {
+                const recoveredMaxTokens = Math.min(12000, Math.max(maxTokens + 1200, Math.round(maxTokens * 1.5)));
+                const recoveredReasoningEffort = modelSupportsReasoningEffort(resolvedModel) ? null : reasoningEffort;
+                console.warn(`OpenAI response hit max_output_tokens without visible text for model ${resolvedModel}; retrying with max_output_tokens=${recoveredMaxTokens} and reasoning=${recoveredReasoningEffort || "default"}.`);
+                return callOpenAI({
+                    model: resolvedModel,
+                    systemPrompt,
+                    userPrompt,
+                    maxTokens: recoveredMaxTokens,
+                    reasoningEffort: recoveredReasoningEffort,
+                    jsonSchema,
+                    allowOutputBudgetRecovery: false
+                });
+            }
+            throw new Error(buildOpenAiEmptyTextError(data));
+        }
         return text;
     }
     throw new Error(l("The OpenAI request failed.", "La requête OpenAI a échoué."));
@@ -4423,8 +4457,7 @@ async function enforcePhaseWordCount(phase, draftText, options = {}) {
         model: getParticipantModel(phase.speaker),
                                                    systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                    userPrompt: prompt,
-                                                   maxTokens: getAiTurnMaxOutputTokens(phase),
-                                                   reasoningEffort: "low"
+                                                   maxTokens: getAiTurnMaxOutputTokens(phase)
     }));
     return pickBetterWordCountDraft(draft, repaired, targetWordCount, allowedMin, allowedMax);
 }
@@ -4455,8 +4488,7 @@ async function enforceDirectJudgeAnswer(phase, draftText) {
         model: getParticipantModel(phase.speaker),
                                                   systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                   userPrompt: prompt,
-                                                  maxTokens: 1200,
-                                                  reasoningEffort: "low"
+                                                  maxTokens: 1200
     }));
     return revised || draft;
 }
@@ -4480,7 +4512,7 @@ async function handleAiConferPhase(phase) {
         : isFrenchLocale() ? `${speaker} est en caucus et prépare une version révisée du ${phaseSubtypeLabel(targetPhase.subtype).toLowerCase()}...` : `${speaker} is conferring and preparing a revised ${targetPhase.subtype || "speech"}...`
     );
     try {
-        const text = sanitizeText(await maybePrepareAiTurnForPhase(targetPhase, { revisionPasses: 2 }));
+        const text = sanitizeText(await maybePrepareAiTurnForPhase(targetPhase, { revisionPasses: 1 }));
         if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
         const current = getCurrentPhase();
         if (!current || current.id !== phaseId || state.completed) {
