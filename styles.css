@@ -161,6 +161,10 @@ body[data-screen="match"] .app-shell {
     box-shadow: var(--shadow);
 }
 
+.hero {
+    gap: 16px;
+}
+
 .eyebrow {
     margin-bottom: 8px;
     color: #dbc48b;

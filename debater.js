@@ -8,6 +8,7 @@ const STORAGE_KEYS = {
 
 const LOGO_CANDIDATES = Object.freeze([
     "ethics-bowl-logo.png",
+    "assets/icon.png",
     "ethicsbowl-logo.png",
     "ethics_bowl_logo.png",
     "logo.png"

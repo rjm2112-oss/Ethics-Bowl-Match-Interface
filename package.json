@@ -24,9 +24,15 @@
       "debater.html",
       "debater.js",
       "instructions.html",
-      "styles.css"
+      "styles.css",
+      "app-logo.png",
+      "assets/app-icon.png",
+      "ethics-bowl-logo.png",
+      "assets/icon.png"
     ],
+    "icon": "assets/app-icon.png",
     "linux": {
+      "icon": "assets/app-icon.png",
       "target": ["AppImage"],
       "category": "Education"
     },

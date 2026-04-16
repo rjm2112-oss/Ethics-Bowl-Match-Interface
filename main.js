@@ -9,6 +9,7 @@ function createWindow() {
         minHeight: 800,
         autoHideMenuBar: true,
         title: 'Ethics Bowl Match',
+        icon: path.join(__dirname, 'assets', 'app-icon.png'),
         webPreferences: {
             contextIsolation: true,
             nodeIntegration: false
