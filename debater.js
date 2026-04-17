@@ -21,6 +21,7 @@ const OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
 const AVAILABLE_MATCH_MODELS = Object.freeze([
     { value: "gpt-5.4", label: "gpt-5" },
     { value: "gpt-4.1", label: "gpt-4" },
+    { value: "gpt-4o", label: "gpt-4o" },
     { value: "gpt-5.4-mini", label: "gpt-5-mini" },
     { value: "gpt-5.4-nano", label: "gpt-5-nano" }
 ]);
@@ -1335,13 +1336,37 @@ function clampWordTarget(wordCount, guidance) {
     return Math.round(clampNumber(Number(wordCount) || fallback, guidance.min, guidance.max));
 }
 
-function getAiRevisionWordPlan(phase, baselineWordCount, currentDraftText) {
+function shouldUseFixedRevisionWordTarget(phase) {
+    return !!phase && phase.kind === "speech" && (
+        phase.subtype === "presentation" ||
+        phase.subtype === "commentary" ||
+        phase.subtype === "response"
+    );
+}
+
+function getPreferredPhaseWordTarget(phase, guidance = null) {
+    const resolvedGuidance = guidance || getPhaseWordGuidance(phase);
+    if (!resolvedGuidance) return 0;
+    const midpoint = Math.round((resolvedGuidance.min + resolvedGuidance.max) / 2);
+    return clampWordTarget(resolvedGuidance.preferredTarget || midpoint, resolvedGuidance);
+}
+
+function getAiRevisionWordPlan(phase, baselineWordCount, currentDraftText, options = {}) {
     const guidance = getPhaseWordGuidance(phase);
     if (!guidance) return null;
     const originalDraftWordCount = Math.max(0, Math.round(Number(baselineWordCount) || 0));
     const currentDraftWordCount = countWords(currentDraftText);
-    const targetWordCount = clampWordTarget(originalDraftWordCount || currentDraftWordCount || guidance.preferredTarget, guidance);
-    const tolerance = guidance.revisionTolerance || 12;
+    const exactTarget = options.exactTarget === true || (options.exactTarget !== false && shouldUseFixedRevisionWordTarget(phase));
+    const requestedTolerance = Number(options.tolerance);
+    const targetSeed = exactTarget
+        ? getPreferredPhaseWordTarget(phase, guidance)
+        : (originalDraftWordCount || currentDraftWordCount || guidance.preferredTarget);
+    const targetWordCount = clampWordTarget(targetSeed, guidance);
+    const tolerance = Number.isFinite(requestedTolerance)
+        ? Math.max(0, Math.round(requestedTolerance))
+        : exactTarget
+        ? 0
+        : guidance.revisionTolerance || 12;
     return {
         originalDraftWordCount,
         currentDraftWordCount,
@@ -1350,7 +1375,8 @@ function getAiRevisionWordPlan(phase, baselineWordCount, currentDraftText) {
         allowedMax: Math.min(guidance.max, targetWordCount + tolerance),
         hardMin: guidance.min,
         hardMax: guidance.max,
-        preferredTarget: guidance.preferredTarget
+        preferredTarget: guidance.preferredTarget,
+        exactTarget
     };
 }
 
@@ -4395,7 +4421,13 @@ function buildAiTurnPrompt(phase) {
 function buildAiTurnRevisionPrompt(phase, draftText, revisionNumber, totalRevisions, baselineWordCount = 0) {
     const draft = sanitizeText(draftText);
     const wordPlan = getAiRevisionWordPlan(phase, baselineWordCount, draft);
-    const wordCountSection = wordPlan ? [
+    const wordCountSection = wordPlan ? wordPlan.exactTarget ? [
+        `Original first-draft word count: ${wordPlan.originalDraftWordCount || wordPlan.currentDraftWordCount} words.`,
+        `Current draft word count: ${wordPlan.currentDraftWordCount} words.`,
+        `Final target for this phase: exactly ${wordPlan.targetWordCount} words.`,
+        "For this revision pass, focus on improving substance, clarity, and responsiveness.",
+        "A separate final pass will adjust the exact word budget after this revision."
+    ].join("\n") : [
         `Original first-draft word count: ${wordPlan.originalDraftWordCount || wordPlan.currentDraftWordCount} words.`,
         `Current draft word count: ${wordPlan.currentDraftWordCount} words.`,
         wordPlan.originalDraftWordCount && wordPlan.originalDraftWordCount !== wordPlan.targetWordCount
@@ -4403,7 +4435,7 @@ function buildAiTurnRevisionPrompt(phase, draftText, revisionNumber, totalRevisi
         : `Target about ${wordPlan.targetWordCount} words.`,
         `Allowed revision window for this pass: ${wordPlan.allowedMin}-${wordPlan.allowedMax} words.`,
         `Hard cap: ${wordPlan.hardMax} words.`,
-        "You must hit the word target exactly.",
+        "You must hit the word target exactly."
     ].join("\n") : "";
 
     return [
@@ -4420,46 +4452,99 @@ function buildAiTurnRevisionPrompt(phase, draftText, revisionNumber, totalRevisi
     ].filter(Boolean).join("\n\n");
 }
 
+function buildAiExactWordBudgetPrompt(phase, draftText, currentWordCount, targetWordCount, attemptNumber = 1) {
+    const draft = sanitizeText(draftText);
+    const delta = Math.round(targetWordCount - currentWordCount);
+    const absDelta = Math.abs(delta);
+    const editingGoal = phase?.kind === "speech" && phase.subtype === "presentation"
+        ? "Keep this as a concise Ethics Bowl presentation that directly answers the moderator's question."
+        : phase?.kind === "speech" && phase.subtype === "commentary"
+        ? "Keep this as a concise commentary on the other participant's presentation."
+        : phase?.kind === "speech" && phase.subtype === "response"
+        ? "Keep this as a concise response to the commentary that addresses the main challenge fairly."
+        : phase?.kind === "judgeAnswer"
+        ? "Keep this as a direct answer to the judge's exact question."
+        : "Keep the draft tightly focused on the current phase.";
+    const adjustmentInstruction = delta > 0
+        ? `The draft is ${absDelta} words short. Add exactly ${absDelta} words.`
+        : `The draft is ${absDelta} words over. Remove exactly ${absDelta} words.`;
+    const editScopeInstruction = absDelta <= 8
+        ? "Use the smallest possible edits so the argument and structure stay essentially unchanged."
+        : absDelta <= 30
+        ? "Prefer targeted cuts or additions inside existing sentences and transitions rather than rewriting the whole draft."
+        : "You may rewrite sentences or short sections as needed, but preserve the substantive position and overall structure.";
+    const retryInstruction = attemptNumber > 1
+        ? "The previous adjustment missed the exact target. Recount carefully and fix only the remaining difference."
+        : "";
+
+    return [
+        `You are doing the final word-budget adjustment for ${phase.title}.`,
+        editingGoal,
+        `Current draft word count using the app's counter: ${currentWordCount} words.`,
+        `Required final word count using the app's counter: exactly ${targetWordCount} words.`,
+        adjustmentInstruction,
+        editScopeInstruction,
+        retryInstruction,
+        "Preserve the draft's substantive position, voice, and paragraph structure where possible.",
+        "Do not add headings or meta commentary.",
+        "Do not mention the word count.",
+        `Current draft:\n${clipText(draft, 15000)}`,
+        "Return the full revised draft only."
+    ].filter(Boolean).join("\n\n");
+}
+
 async function enforcePhaseWordCount(phase, draftText, options = {}) {
     const draft = sanitizeText(draftText);
     const guidance = getPhaseWordGuidance(phase);
     if (!draft || !guidance) return draft;
     const mode = options.mode === "revision" ? "revision" : "initial";
     const baselineWordCount = Math.max(0, Math.round(Number(options.baselineWordCount) || 0));
-    const plan = getAiRevisionWordPlan(phase, baselineWordCount, draft);
-    const currentWordCount = countWords(draft);
+    const exactTarget = mode === "revision" && shouldUseFixedRevisionWordTarget(phase);
+    const plan = getAiRevisionWordPlan(phase, baselineWordCount, draft, { exactTarget });
     const allowedMin = mode === "revision" ? plan.allowedMin : guidance.min;
     const allowedMax = mode === "revision" ? plan.allowedMax : guidance.max;
     const targetWordCount = mode === "revision" ? plan.targetWordCount : guidance.preferredTarget;
-    if (currentWordCount >= allowedMin && currentWordCount <= allowedMax) return draft;
-    const prompt = [
-        `You are fixing the word count for ${phase.title}.`,
-        buildAiTurnPrompt(phase),
-        mode === "revision"
-        ? [
-            `Original first-draft word count: ${plan.originalDraftWordCount || plan.targetWordCount} words.`,
-            `Current draft word count: ${currentWordCount} words.`,
-            `Target about ${targetWordCount} words.`,
-            `Required final revision window: ${allowedMin}-${allowedMax} words.`,
-            `Hard phase range: ${guidance.min}-${guidance.max} words.`
-        ].join("\n")
-        : [
-            `Current draft word count: ${currentWordCount} words.`,
-            `Target about ${targetWordCount} words.`,
-            `Required final range: ${guidance.min}-${guidance.max} words.`
-        ].join("\n"),
-        "Do not mention the word count.",
-        "You must hit the word target exactly.",
-        `Current draft:\n${clipText(draft, 15000)}`,
-        "Output plain text only."
-    ].join("\n\n");
-    const repaired = sanitizeText(await callOpenAI({
-        model: getParticipantModel(phase.speaker),
+    let bestDraft = draft;
+    let currentWordCount = countWords(bestDraft);
+    if (currentWordCount >= allowedMin && currentWordCount <= allowedMax) return bestDraft;
+
+    const maxAttempts = exactTarget ? 4 : 1;
+    for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber += 1) {
+        const prompt = exactTarget
+            ? buildAiExactWordBudgetPrompt(phase, bestDraft, currentWordCount, targetWordCount, attemptNumber)
+            : [
+                `You are fixing the word count for ${phase.title}.`,
+                buildAiTurnPrompt(phase),
+                mode === "revision"
+                ? [
+                    `Original first-draft word count: ${plan.originalDraftWordCount || plan.targetWordCount} words.`,
+                    `Current draft word count: ${currentWordCount} words.`,
+                    `Target about ${targetWordCount} words.`,
+                    `Required final revision window: ${allowedMin}-${allowedMax} words.`,
+                    `Hard phase range: ${guidance.min}-${guidance.max} words.`
+                ].join("\n")
+                : [
+                    `Current draft word count: ${currentWordCount} words.`,
+                    `Target about ${targetWordCount} words.`,
+                    `Required final range: ${guidance.min}-${guidance.max} words.`
+                ].join("\n"),
+                "Do not mention the word count.",
+                "You must hit the word target exactly.",
+                `Current draft:\n${clipText(bestDraft, 15000)}`,
+                "Output plain text only."
+            ].join("\n\n");
+        const repaired = sanitizeText(await callOpenAI({
+            model: getParticipantModel(phase.speaker),
                                                    systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                    userPrompt: prompt,
                                                    maxTokens: getAiTurnMaxOutputTokens(phase)
-    }));
-    return pickBetterWordCountDraft(draft, repaired, targetWordCount, allowedMin, allowedMax);
+        }));
+        bestDraft = pickBetterWordCountDraft(bestDraft, repaired, targetWordCount, allowedMin, allowedMax);
+        currentWordCount = countWords(bestDraft);
+        if (currentWordCount >= allowedMin && currentWordCount <= allowedMax) return bestDraft;
+    }
+
+    return bestDraft;
 }
 
 async function enforceDirectJudgeAnswer(phase, draftText) {
