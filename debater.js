@@ -1299,11 +1299,11 @@ function getPhaseWordGuidance(phase) {
 
     if (phase.kind === "speech" && phase.subtype === "presentation") {
         return {
-            min: 655,
-            max: 680,
-            preferredTarget: 665,
+            min: 645,
+            max: 670,
+            preferredTarget: 660,
             revisionTolerance: 100,
-            label: "655-680 words"
+            label: "645-670 words"
         };
     }
 
