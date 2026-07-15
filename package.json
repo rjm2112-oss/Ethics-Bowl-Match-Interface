@@ -2,10 +2,12 @@
   "name": "ethics_bowl_electron",
   "version": "1.0.0",
   "description": "Local Ethics Bowl match app",
+  "desktopName": "Ethics Bowl Match",
   "main": "main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node --test test/*.test.js",
     "pack": "electron-builder --dir --publish never",
     "dist": "electron-builder --publish never",
     "dist:linux": "electron-builder --linux AppImage --publish never",
@@ -13,14 +15,19 @@
     "dist:mac": "electron-builder --mac dmg zip --publish never"
   },
   "devDependencies": {
-    "electron": "^37.1.0",
-    "electron-builder": "^24.13.3"
+    "electron": "43.1.1",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "local.ethicsbowl.match",
     "productName": "Ethics Bowl Match",
     "files": [
       "main.js",
+      "preload.js",
+      "src/main/**/*.js",
+      "src/shared/model-catalog.js",
+      "src/shared/speech-pacing.js",
+      "src/shared/ai-turn-prompt.js",
       "debater.html",
       "debater.js",
       "instructions.html",
@@ -33,15 +40,28 @@
     "icon": "assets/app-icon.png",
     "linux": {
       "icon": "assets/app-icon.png",
-      "target": ["AppImage"],
+      "syncDesktopName": true,
+      "target": [
+        "AppImage"
+      ],
       "category": "Education"
     },
     "win": {
-      "target": ["nsis", "portable"]
+      "target": [
+        "nsis",
+        "portable"
+      ]
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.education"
     }
+  },
+  "allowScripts": {
+    "electron@43.1.1": true,
+    "electron-winstaller@5.4.0": true
   }
 }

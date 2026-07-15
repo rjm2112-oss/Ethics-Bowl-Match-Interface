@@ -14,20 +14,19 @@ const LOGO_CANDIDATES = Object.freeze([
     "logo.png"
 ]);
 
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-const OPENAI_TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions";
-const OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
+const MODEL_CATALOG = window.EthicsModelCatalog;
+if (!MODEL_CATALOG) throw new Error("The shared model catalog could not be loaded.");
+const SPEECH_PACING = window.EthicsSpeechPacing;
+if (!SPEECH_PACING) throw new Error("The shared speech pacing helpers could not be loaded.");
+const AI_TURN_PROMPTS = window.EthicsAiTurnPrompts;
+if (!AI_TURN_PROMPTS) throw new Error("The shared AI turn prompt helpers could not be loaded.");
 
-const AVAILABLE_MATCH_MODELS = Object.freeze([
-    { value: "gpt-5.4", label: "gpt-5" },
-    { value: "gpt-4.1", label: "gpt-4" },
-    { value: "gpt-4o", label: "gpt-4o" },
-    { value: "gpt-5.4-mini", label: "gpt-5-mini" },
-    { value: "gpt-5.4-nano", label: "gpt-5-nano" }
-]);
-
-const DEFAULT_PARTICIPANT_MODEL = "gpt-5.4";
-const DEFAULT_JUDGE_MODEL = "gpt-5.4";
+const AVAILABLE_MATCH_MODELS = MODEL_CATALOG.MATCH_MODELS;
+const DEFAULT_PARTICIPANT_MODEL = MODEL_CATALOG.DEFAULT_PARTICIPANT_MODEL;
+const DEFAULT_JUDGE_MODEL = MODEL_CATALOG.DEFAULT_JUDGE_MODEL;
+const STUDENT_REASONING_EFFORT = MODEL_CATALOG.REASONING_POLICIES.participant;
+const JUDGE_REASONING_EFFORT = MODEL_CATALOG.REASONING_POLICIES.judge;
+const AUDIO_MODELS = MODEL_CATALOG.AUDIO_MODELS;
 
 const OFFICIAL_SCORE_SHEET_TEXT = `
 Each judge scores each participant out of 60.
@@ -200,8 +199,7 @@ const MAX_JUDGE_QUESTION_CHARS = 500;
 const VOICE_AUTO_SEND_DELAY_MS = 2000;
 const VOICE_SILENCE_STOP_DELAY_MS = 2000;
 const VOICE_SILENCE_SEND_DELAY_MS = 150;
-const LIVE_PREVIEW_POLL_MS = 1200;
-const LIVE_PREVIEW_MIN_BLOB_BYTES = 4000;
+const CREDENTIAL_STATUS_TIMEOUT_MS = 4000;
 const MAX_TTS_CHARS = 2500;
 const SPEECH_CHUNK_MAX = 420;
 const AUTO_SPEAK_MESSAGE_KINDS = new Set(["moderator", "ai", "ai-alt", "judge"]);
@@ -377,12 +375,10 @@ const modelSelectEl = document.getElementById("modelSelect");
 const case1TitleInputEl = document.getElementById("case1TitleInput");
 const case1QuestionInputEl = document.getElementById("case1QuestionInput");
 const case1TextInputEl = document.getElementById("case1TextInput");
-const case1FileInputEl = document.getElementById("case1FileInput");
 
 const case2TitleInputEl = document.getElementById("case2TitleInput");
 const case2QuestionInputEl = document.getElementById("case2QuestionInput");
 const case2TextInputEl = document.getElementById("case2TextInput");
-const case2FileInputEl = document.getElementById("case2FileInput");
 
 const startMatchBtnEl = document.getElementById("startMatchBtn");
 const resetMatchBtnEl = document.getElementById("resetMatchBtn");
@@ -451,16 +447,19 @@ let apiKeyDialogEl = null;
 let apiKeyDialogEyebrowEl = null;
 let apiKeyDialogTitleEl = null;
 let apiKeyDialogCopyEl = null;
-let savedApiKeysTitleEl = null;
-let savedApiKeysEmptyEl = null;
-let savedApiKeysListEl = null;
-let useSelectedApiKeyBtnEl = null;
-let removeSelectedApiKeyBtnEl = null;
-let newApiKeyTitleEl = null;
-let newApiKeyInputEl = null;
-let saveNewApiKeyBtnEl = null;
 let apiKeyDialogCloseBtnEl = null;
-let initialApiKeyDialogShown = false;
+let initialCredentialDialogShown = false;
+const credentialUiByProvider = {};
+const credentialState = {
+    loaded: false,
+    loadingPromise: null,
+    pendingProvider: "",
+    lastError: "",
+    byProvider: {
+        openai: { configured: false, source: "" },
+        anthropic: { configured: false, source: "" }
+    }
+};
 
 const state = {
     locale: INITIAL_LOCALE,
@@ -526,10 +525,7 @@ const state = {
     liveSpeechInterim: "",
     draftBeforeRecording: "",
     livePreviewMode: "",
-    livePreviewTimer: null,
-    livePreviewInFlight: false,
-    livePreviewAbortController: null,
-    livePreviewRequestId: 0,
+    finalTranscriptionRequestId: 0,
     voiceAutoSendTimer: null,
     voiceAutoSendExpectedText: "",
     voiceAutoSendArmed: false,
@@ -598,242 +594,7 @@ function getCurrentLiveSpeechText() {
     return normalizeSpeechText(`${state.liveSpeechFinal} ${state.liveSpeechInterim}`);
 }
 
-function createLocalId(prefix = "id") {
-    if (window.crypto?.randomUUID) return `${prefix}-${window.crypto.randomUUID()}`;
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function maskApiKey(key) {
-    const clean = sanitizeText(key);
-    if (!clean) return "";
-    if (clean.length <= 10) return `${clean.slice(0, 4)}••••`;
-    return `${clean.slice(0, 7)}••••${clean.slice(-4)}`;
-}
-
-function loadSavedApiKeyRecords() {
-    try {
-        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.apiKeys) || "[]");
-        if (!Array.isArray(parsed)) return [];
-        return parsed
-        .map((item) => {
-            if (typeof item === "string") {
-                return {
-                    id: createLocalId("api"),
-             key: sanitizeText(item),
-             createdAt: "",
-             lastUsedAt: ""
-                };
-            }
-            if (!item || typeof item !== "object") return null;
-            return {
-                id: sanitizeText(item.id) || createLocalId("api"),
-             key: sanitizeText(item.key),
-             createdAt: sanitizeText(item.createdAt),
-             lastUsedAt: sanitizeText(item.lastUsedAt)
-            };
-        })
-        .filter((item) => item && item.key);
-    } catch {
-        return [];
-    }
-}
-
-function persistSavedApiKeyRecords(records) {
-    const cleaned = (Array.isArray(records) ? records : [])
-    .map((item) => ({
-        id: sanitizeText(item?.id) || createLocalId("api"),
-                    key: sanitizeText(item?.key),
-                    createdAt: sanitizeText(item?.createdAt) || new Date().toISOString(),
-                    lastUsedAt: sanitizeText(item?.lastUsedAt)
-    }))
-    .filter((item) => item.key);
-    localStorage.setItem(STORAGE_KEYS.apiKeys, JSON.stringify(cleaned));
-}
-
-function getActiveApiKeyId() {
-    return sanitizeText(localStorage.getItem(STORAGE_KEYS.activeApiKeyId) || "");
-}
-
-function setActiveApiKeyId(id) {
-    const clean = sanitizeText(id);
-    if (clean) localStorage.setItem(STORAGE_KEYS.activeApiKeyId, clean);
-    else localStorage.removeItem(STORAGE_KEYS.activeApiKeyId);
-}
-
-function getSortedApiKeyRecords() {
-    return loadSavedApiKeyRecords().sort((a, b) => {
-        const left = new Date(a.lastUsedAt || a.createdAt || 0).getTime();
-        const right = new Date(b.lastUsedAt || b.createdAt || 0).getTime();
-        return right - left;
-    });
-}
-
-function getActiveApiKeyRecord() {
-    const activeId = getActiveApiKeyId();
-    if (!activeId) return null;
-    const record = loadSavedApiKeyRecords().find((item) => item.id === activeId) || null;
-    if (!record) setActiveApiKeyId("");
-    return record;
-}
-
-function getApiKey() {
-    const active = sanitizeText(getActiveApiKeyRecord()?.key || "");
-    if (active) return active;
-
-    const records = getSortedApiKeyRecords();
-    if (!records.length) return "";
-
-    const record = activateSavedApiKey(records[0].id);
-    return sanitizeText(record?.key || "");
-}
-
-function activateSavedApiKey(id) {
-    const cleanId = sanitizeText(id);
-    if (!cleanId) return null;
-    const records = loadSavedApiKeyRecords();
-    const record = records.find((item) => item.id === cleanId) || null;
-    if (!record) return null;
-    record.lastUsedAt = new Date().toISOString();
-    persistSavedApiKeyRecords(records);
-    setActiveApiKeyId(record.id);
-    return record;
-}
-
-function saveAndUseApiKey(rawKey) {
-    const cleanKey = sanitizeText(rawKey);
-    if (!cleanKey) throw new Error(l("Enter an API key first.", "Entrez d’abord une clé API."));
-
-    const records = loadSavedApiKeyRecords();
-    const existing = records.find((item) => item.key === cleanKey);
-    if (existing) {
-        existing.lastUsedAt = new Date().toISOString();
-        persistSavedApiKeyRecords(records);
-        setActiveApiKeyId(existing.id);
-        return existing;
-    }
-
-    const record = {
-        id: createLocalId("api"),
-        key: cleanKey,
-        createdAt: new Date().toISOString(),
-        lastUsedAt: new Date().toISOString()
-    };
-    records.unshift(record);
-    persistSavedApiKeyRecords(records);
-    setActiveApiKeyId(record.id);
-    return record;
-}
-
-function removeSavedApiKey(id) {
-    const cleanId = sanitizeText(id);
-    if (!cleanId) return;
-    const remaining = loadSavedApiKeyRecords().filter((item) => item.id !== cleanId);
-    persistSavedApiKeyRecords(remaining);
-    if (getActiveApiKeyId() === cleanId) setActiveApiKeyId("");
-}
-
-function formatApiKeyTimestamp(isoString) {
-    if (!isoString) return "";
-    try {
-        return new Date(isoString).toLocaleString();
-    } catch {
-        return "";
-    }
-}
-
-function getSelectedApiKeyIdFromDialog() {
-    return sanitizeText(
-        apiKeyDialogEl?.querySelector('input[name="savedApiKeyChoice"]:checked')?.value || ""
-    );
-}
-
-function ensureApiKeyUiStyles() {
-    if (document.getElementById("localApiKeyUiStyles")) return;
-    const style = document.createElement("style");
-    style.id = "localApiKeyUiStyles";
-    style.textContent = `
-    .local-api-key-dialog {
-        border: none;
-        padding: 0;
-        background: transparent;
-        width: min(760px, calc(100vw - 24px));
-        max-width: 100%;
-    }
-
-    .local-api-key-dialog::backdrop {
-        background: rgba(17, 26, 52, 0.48);
-        backdrop-filter: blur(6px);
-    }
-
-    .local-api-key-dialog-card {
-        background: rgba(255, 255, 255, 0.92);
-        border: 1px solid rgba(97, 122, 191, 0.16);
-        border-radius: 28px;
-        box-shadow: 0 20px 60px rgba(31, 51, 107, 0.12);
-        backdrop-filter: blur(12px);
-        padding: 20px;
-        display: grid;
-        gap: 16px;
-        color: #18233f;
-    }
-
-    .local-api-key-dialog-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 16px;
-        align-items: flex-start;
-        flex-wrap: wrap;
-    }
-
-    .local-api-key-section {
-        border: 1px solid rgba(97, 122, 191, 0.16);
-        background: rgba(255, 255, 255, 0.62);
-        border-radius: 20px;
-        padding: 14px;
-        display: grid;
-        gap: 12px;
-    }
-
-    .local-api-key-list {
-        display: grid;
-        gap: 10px;
-        max-height: 240px;
-        overflow-y: auto;
-    }
-
-    .local-api-key-row {
-        display: flex;
-        gap: 12px;
-        align-items: flex-start;
-        border: 1px solid rgba(97, 122, 191, 0.16);
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.68);
-        padding: 12px;
-        cursor: pointer;
-    }
-
-    .local-api-key-row input[type="radio"] {
-        width: auto;
-        margin-top: 4px;
-    }
-
-    .local-api-key-row-body {
-        display: grid;
-        gap: 6px;
-    }
-
-    .local-api-key-row-meta {
-        color: #5d6d93;
-        font-size: 0.9rem;
-        line-height: 1.4;
-    }
-    `;
-    document.head.appendChild(style);
-}
-
 function ensureApiKeyUi() {
-    ensureApiKeyUiStyles();
-
     manageApiKeysBtnEl = document.getElementById("manageApiKeysBtn");
     if (!manageApiKeysBtnEl) {
         const host = localeToggleBtnEl?.parentElement || instructionsLinkEl?.parentElement;
@@ -864,32 +625,31 @@ function ensureApiKeyUi() {
         dialog.className = "local-api-key-dialog";
         dialog.innerHTML = `
         <div class="local-api-key-dialog-card">
-        <div class="local-api-key-dialog-head">
-        <div>
-        <div id="apiKeyDialogEyebrow" class="eyebrow"></div>
-        <h2 id="apiKeyDialogTitle"></h2>
-        <p id="apiKeyDialogCopy" class="hero-copy"></p>
-        </div>
-        <button type="button" id="apiKeyDialogCloseBtn" class="ghost-btn"></button>
-        </div>
-
-        <div class="local-api-key-section">
-        <div id="savedApiKeysTitle" class="phase-title"></div>
-        <div id="savedApiKeysEmpty" class="small-note"></div>
-        <div id="savedApiKeysList" class="local-api-key-list"></div>
-        <div class="button-cluster">
-        <button type="button" id="useSelectedApiKeyBtn" class="secondary-btn"></button>
-        <button type="button" id="removeSelectedApiKeyBtn" class="ghost-btn"></button>
-        </div>
-        </div>
-
-        <div class="local-api-key-section">
-        <div id="newApiKeyTitle" class="phase-title"></div>
-        <input id="newApiKeyInput" type="password" autocomplete="off" spellcheck="false" />
-        <div class="button-cluster">
-        <button type="button" id="saveNewApiKeyBtn" class="primary-btn"></button>
-        </div>
-        </div>
+          <div class="local-api-key-dialog-head">
+            <div>
+              <div id="apiKeyDialogEyebrow" class="eyebrow"></div>
+              <h2 id="apiKeyDialogTitle"></h2>
+              <p id="apiKeyDialogCopy" class="hero-copy"></p>
+            </div>
+            <button type="button" id="apiKeyDialogCloseBtn" class="ghost-btn"></button>
+          </div>
+          <div class="credential-provider-grid">
+            ${["openai", "anthropic"].map((provider) => `
+              <section class="local-api-key-section credential-provider-card" data-credential-provider="${provider}">
+                <div class="credential-provider-head">
+                  <div class="phase-title" data-credential-name></div>
+                  <div class="status-chip inactive" data-credential-status></div>
+                </div>
+                <div class="small-note" data-credential-source></div>
+                <label class="credential-input-label" for="${provider}CredentialInput" data-credential-input-label></label>
+                <input id="${provider}CredentialInput" data-credential-input type="password" autocomplete="new-password" spellcheck="false" />
+                <div class="button-cluster">
+                  <button type="button" class="primary-btn" data-credential-save></button>
+                  <button type="button" class="ghost-btn" data-credential-remove></button>
+                </div>
+              </section>
+            `).join("")}
+          </div>
         </div>
         `;
         document.body.appendChild(dialog);
@@ -899,34 +659,42 @@ function ensureApiKeyUi() {
     apiKeyDialogEyebrowEl = document.getElementById("apiKeyDialogEyebrow");
     apiKeyDialogTitleEl = document.getElementById("apiKeyDialogTitle");
     apiKeyDialogCopyEl = document.getElementById("apiKeyDialogCopy");
-    savedApiKeysTitleEl = document.getElementById("savedApiKeysTitle");
-    savedApiKeysEmptyEl = document.getElementById("savedApiKeysEmpty");
-    savedApiKeysListEl = document.getElementById("savedApiKeysList");
-    useSelectedApiKeyBtnEl = document.getElementById("useSelectedApiKeyBtn");
-    removeSelectedApiKeyBtnEl = document.getElementById("removeSelectedApiKeyBtn");
-    newApiKeyTitleEl = document.getElementById("newApiKeyTitle");
-    newApiKeyInputEl = document.getElementById("newApiKeyInput");
-    saveNewApiKeyBtnEl = document.getElementById("saveNewApiKeyBtn");
     apiKeyDialogCloseBtnEl = document.getElementById("apiKeyDialogCloseBtn");
+
+    apiKeyDialogEl.querySelectorAll("[data-credential-provider]").forEach((card) => {
+        const provider = card.dataset.credentialProvider;
+        const refs = {
+            card,
+            name: card.querySelector("[data-credential-name]"),
+            status: card.querySelector("[data-credential-status]"),
+            source: card.querySelector("[data-credential-source]"),
+            inputLabel: card.querySelector("[data-credential-input-label]"),
+            input: card.querySelector("[data-credential-input]"),
+            save: card.querySelector("[data-credential-save]"),
+            remove: card.querySelector("[data-credential-remove]")
+        };
+        credentialUiByProvider[provider] = refs;
+        if (refs.save && refs.save.dataset.bound !== "1") {
+            refs.save.dataset.bound = "1";
+            refs.save.addEventListener("click", () => { void saveProviderCredential(provider); });
+        }
+        if (refs.remove && refs.remove.dataset.bound !== "1") {
+            refs.remove.dataset.bound = "1";
+            refs.remove.addEventListener("click", () => { void removeProviderCredential(provider); });
+        }
+        if (refs.input && refs.input.dataset.bound !== "1") {
+            refs.input.dataset.bound = "1";
+            refs.input.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                void saveProviderCredential(provider);
+            });
+        }
+    });
 
     if (manageApiKeysBtnEl && manageApiKeysBtnEl.dataset.bound !== "1") {
         manageApiKeysBtnEl.dataset.bound = "1";
-        manageApiKeysBtnEl.addEventListener("click", openApiKeyDialog);
-    }
-
-    if (useSelectedApiKeyBtnEl && useSelectedApiKeyBtnEl.dataset.bound !== "1") {
-        useSelectedApiKeyBtnEl.dataset.bound = "1";
-        useSelectedApiKeyBtnEl.addEventListener("click", useSelectedApiKeyFromDialog);
-    }
-
-    if (removeSelectedApiKeyBtnEl && removeSelectedApiKeyBtnEl.dataset.bound !== "1") {
-        removeSelectedApiKeyBtnEl.dataset.bound = "1";
-        removeSelectedApiKeyBtnEl.addEventListener("click", deleteSelectedApiKeyFromDialog);
-    }
-
-    if (saveNewApiKeyBtnEl && saveNewApiKeyBtnEl.dataset.bound !== "1") {
-        saveNewApiKeyBtnEl.dataset.bound = "1";
-        saveNewApiKeyBtnEl.addEventListener("click", saveNewApiKeyFromDialog);
+        manageApiKeysBtnEl.addEventListener("click", () => openApiKeyDialog());
     }
 
     if (apiKeyDialogCloseBtnEl && apiKeyDialogCloseBtnEl.dataset.bound !== "1") {
@@ -934,16 +702,6 @@ function ensureApiKeyUi() {
         apiKeyDialogCloseBtnEl.addEventListener("click", () => {
             closeApiKeyDialog();
             refreshControls();
-        });
-    }
-
-    if (newApiKeyInputEl && newApiKeyInputEl.dataset.bound !== "1") {
-        newApiKeyInputEl.dataset.bound = "1";
-        newApiKeyInputEl.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                saveNewApiKeyFromDialog();
-            }
         });
     }
 
@@ -956,107 +714,225 @@ function ensureApiKeyUi() {
 }
 
 function updateApiKeyUiText() {
-    if (manageApiKeysBtnEl) manageApiKeysBtnEl.textContent = l("API Keys", "Clés API");
-    if (apiKeyDialogEyebrowEl) apiKeyDialogEyebrowEl.textContent = l("Local API setup", "Configuration API locale");
-    if (apiKeyDialogTitleEl) apiKeyDialogTitleEl.textContent = l("Choose an API key", "Choisissez une clé API");
+    if (manageApiKeysBtnEl) manageApiKeysBtnEl.textContent = l("AI Credentials", "Identifiants IA");
+    if (apiKeyDialogEyebrowEl) apiKeyDialogEyebrowEl.textContent = l("Local provider setup", "Configuration locale des fournisseurs");
+    if (apiKeyDialogTitleEl) apiKeyDialogTitleEl.textContent = l("AI provider credentials", "Identifiants des fournisseurs IA");
     if (apiKeyDialogCopyEl) {
         apiKeyDialogCopyEl.textContent = l(
-            "This app stores saved keys only in this browser. Select a saved key or add a new one.",
-            "Cette application enregistre les clés seulement dans ce navigateur. Sélectionnez une clé enregistrée ou ajoutez-en une nouvelle."
+            "Keys are stored by the desktop app and are never shown here. Enter a key only when you want to save or replace it.",
+            "Les clés sont conservées par l’application de bureau et ne sont jamais affichées ici. Entrez une clé seulement pour l’enregistrer ou la remplacer."
         );
     }
-    if (savedApiKeysTitleEl) savedApiKeysTitleEl.textContent = l("Saved keys", "Clés enregistrées");
-    if (savedApiKeysEmptyEl) savedApiKeysEmptyEl.textContent = l("No saved keys yet.", "Aucune clé enregistrée pour le moment.");
-    if (useSelectedApiKeyBtnEl) useSelectedApiKeyBtnEl.textContent = l("Use selected key", "Utiliser la clé sélectionnée");
-    if (removeSelectedApiKeyBtnEl) removeSelectedApiKeyBtnEl.textContent = l("Delete selected key", "Supprimer la clé sélectionnée");
-    if (newApiKeyTitleEl) newApiKeyTitleEl.textContent = l("Add a new key", "Ajouter une nouvelle clé");
-    if (newApiKeyInputEl) newApiKeyInputEl.placeholder = l("Paste a new OpenAI API key here", "Collez ici une nouvelle clé API OpenAI");
-    if (saveNewApiKeyBtnEl) saveNewApiKeyBtnEl.textContent = l("Save and use new key", "Enregistrer et utiliser la nouvelle clé");
     if (apiKeyDialogCloseBtnEl) apiKeyDialogCloseBtnEl.textContent = l("Close", "Fermer");
 }
 
-function renderSavedApiKeyList() {
-    if (!savedApiKeysListEl || !savedApiKeysEmptyEl) return;
+function providerLabel(provider) {
+    return MODEL_CATALOG.getProvider(provider)?.label || titleCase(provider);
+}
 
-    const records = getSortedApiKeyRecords();
-    const selectedId = getSelectedApiKeyIdFromDialog() || getActiveApiKeyId() || records[0]?.id || "";
+function hasCredential(provider) {
+    return !!credentialState.byProvider[provider]?.configured;
+}
 
-    savedApiKeysListEl.innerHTML = "";
-    savedApiKeysEmptyEl.hidden = records.length > 0;
+function hasDesktopBridge() {
+    return typeof window.ethicsApi?.credentials?.status === "function"
+        && typeof window.ethicsApi?.ai?.generate === "function"
+        && typeof window.ethicsApi?.audio?.transcribe === "function";
+}
 
-    if (useSelectedApiKeyBtnEl) useSelectedApiKeyBtnEl.disabled = !records.length;
-    if (removeSelectedApiKeyBtnEl) removeSelectedApiKeyBtnEl.disabled = !records.length;
+function desktopLaunchMessage() {
+    return l(
+        "Open the Ethics Bowl desktop app; this raw HTML page cannot securely access provider credentials.",
+        "Ouvrez l’application de bureau de la Coupe éthique; cette page HTML brute ne peut pas accéder aux identifiants de façon sécurisée."
+    );
+}
 
-    if (!records.length) return;
+function getCredentialsBridge() {
+    const bridge = window.ethicsApi?.credentials;
+    if (!bridge || typeof bridge.status !== "function" || typeof bridge.save !== "function" || typeof bridge.remove !== "function") {
+        throw new Error(l("The desktop credential bridge is unavailable.", "Le pont d’identifiants de l’application de bureau n’est pas disponible."));
+    }
+    return bridge;
+}
 
-    records.forEach((record) => {
-        const row = document.createElement("label");
-        row.className = "local-api-key-row";
-
-        const radio = document.createElement("input");
-        radio.type = "radio";
-        radio.name = "savedApiKeyChoice";
-        radio.value = record.id;
-        radio.checked = record.id === selectedId;
-
-        const body = document.createElement("div");
-        body.className = "local-api-key-row-body";
-
-        const title = document.createElement("div");
-        title.className = "phase-title";
-        title.textContent = maskApiKey(record.key);
-
-        const meta = document.createElement("div");
-        meta.className = "local-api-key-row-meta";
-
-        const parts = [];
-        if (record.id === getActiveApiKeyId()) parts.push(l("currently active", "clé active"));
-        if (record.lastUsedAt) {
-            parts.push(
-                isFrenchLocale()
-                ? `dernière utilisation : ${formatApiKeyTimestamp(record.lastUsedAt)}`
-                : `last used: ${formatApiKeyTimestamp(record.lastUsedAt)}`
-            );
+async function refreshCredentialStatus({ force = false } = {}) {
+    if (credentialState.loadingPromise) return credentialState.loadingPromise;
+    if (credentialState.loaded && !force) return credentialState.byProvider;
+    let trackedPromise = null;
+    trackedPromise = (async () => {
+        try {
+            const rows = await Promise.race([
+                getCredentialsBridge().status(),
+                new Promise((_, reject) => window.setTimeout(
+                    () => reject(new Error(l("Credential status timed out.", "La vérification des identifiants a expiré."))),
+                    CREDENTIAL_STATUS_TIMEOUT_MS
+                ))
+            ]);
+            for (const provider of ["openai", "anthropic"]) {
+                const row = Array.isArray(rows) ? rows.find((item) => item?.provider === provider) : null;
+                credentialState.byProvider[provider] = {
+                    configured: !!row?.configured,
+                    source: sanitizeText(row?.source || "")
+                };
+            }
+            credentialState.lastError = "";
+            return credentialState.byProvider;
+        } catch (error) {
+            for (const provider of ["openai", "anthropic"]) {
+                credentialState.byProvider[provider] = { configured: false, source: "" };
+            }
+            credentialState.lastError = safeBridgeErrorMessage(error) || l("Credential status is unavailable.", "L’état des identifiants n’est pas disponible.");
+            throw error;
+        } finally {
+            credentialState.loaded = true;
+            updateApiKeyUi();
         }
-
-        meta.textContent = parts.join(" • ");
-
-        body.appendChild(title);
-        if (meta.textContent) body.appendChild(meta);
-
-        row.appendChild(radio);
-        row.appendChild(body);
-        savedApiKeysListEl.appendChild(row);
+    })().finally(() => {
+        if (credentialState.loadingPromise === trackedPromise) credentialState.loadingPromise = null;
     });
+    credentialState.loadingPromise = trackedPromise;
+    updateApiKeyUi();
+    return trackedPromise;
+}
+
+async function migrateLegacyOpenAiCredential() {
+    const rawRecords = localStorage.getItem(STORAGE_KEYS.apiKeys);
+    if (rawRecords == null) {
+        localStorage.removeItem(STORAGE_KEYS.activeApiKeyId);
+        return;
+    }
+    let legacyKey = "";
+    let migrationComplete = false;
+    try {
+        const parsed = JSON.parse(rawRecords);
+        const records = Array.isArray(parsed) ? parsed : [];
+        const activeId = sanitizeText(localStorage.getItem(STORAGE_KEYS.activeApiKeyId) || "");
+        const activeRecord = activeId
+            ? records.find((item) => item && typeof item === "object" && sanitizeText(item.id) === activeId)
+            : null;
+        const readLegacyKey = (candidate) => sanitizeText(typeof candidate === "string" ? candidate : candidate?.key || "");
+        legacyKey = readLegacyKey(activeRecord) || records.map(readLegacyKey).find(Boolean) || "";
+        if (legacyKey) {
+            await getCredentialsBridge().save("openai", legacyKey);
+        }
+        migrationComplete = true;
+    } catch {
+        console.warn("Legacy OpenAI credential migration could not be completed.");
+    } finally {
+        legacyKey = "";
+        if (migrationComplete) {
+            localStorage.removeItem(STORAGE_KEYS.apiKeys);
+            localStorage.removeItem(STORAGE_KEYS.activeApiKeyId);
+        }
+    }
+}
+
+function safeBridgeErrorMessage(error) {
+    return sanitizeText(error?.message || "")
+        .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[redacted]")
+        .slice(0, 500);
+}
+
+function credentialSourceLabel(source) {
+    if (source === "environment") return l("Local environment", "Environnement local");
+    if (source === "stored") return l("Desktop credential storage", "Stockage d’identifiants de l’application");
+    return sanitizeText(source);
+}
+
+function updateProviderCredentialCards() {
+    for (const provider of ["openai", "anthropic"]) {
+        const refs = credentialUiByProvider[provider];
+        if (!refs) continue;
+        const label = providerLabel(provider);
+        const record = credentialState.byProvider[provider];
+        const pending = credentialState.pendingProvider === provider;
+        const environmentBacked = record.source === "environment";
+        const bridgeAvailable = hasDesktopBridge();
+        if (refs.name) refs.name.textContent = label;
+        if (refs.status) {
+            refs.status.textContent = !credentialState.loaded
+                ? l("Checking", "Vérification")
+                : record.configured
+                ? l("Configured", "Configuré")
+                : l("Not configured", "Non configuré");
+            refs.status.className = `status-chip ${record.configured ? "active" : "inactive"}`;
+        }
+        if (refs.source) {
+            refs.source.textContent = !bridgeAvailable
+                ? desktopLaunchMessage()
+                : record.configured
+                ? record.source
+                    ? l(`Credential source: ${credentialSourceLabel(record.source)}`, `Source de l’identifiant : ${credentialSourceLabel(record.source)}`)
+                    : l("A credential is configured.", "Un identifiant est configuré.")
+                : l(`Add a ${label} API key to use ${label} models.`, `Ajoutez une clé API ${label} pour utiliser les modèles ${label}.`);
+        }
+        if (refs.inputLabel) refs.inputLabel.textContent = record.configured
+            ? l(`Replace ${label} API key`, `Remplacer la clé API ${label}`)
+            : l(`${label} API key`, `Clé API ${label}`);
+        if (refs.input) {
+            refs.input.placeholder = l(`Enter ${label} API key`, `Entrez la clé API ${label}`);
+            refs.input.disabled = pending || !bridgeAvailable;
+        }
+        if (refs.save) {
+            refs.save.textContent = pending
+                ? l("Saving...", "Enregistrement...")
+                : record.configured
+                ? l("Replace key", "Remplacer la clé")
+                : l("Save key", "Enregistrer la clé");
+            refs.save.disabled = pending || !bridgeAvailable;
+        }
+        if (refs.remove) {
+            refs.remove.textContent = l("Remove", "Supprimer");
+            refs.remove.hidden = environmentBacked;
+            refs.remove.disabled = pending || !record.configured || environmentBacked || !bridgeAvailable;
+        }
+    }
 }
 
 function updateApiKeyStatusUi() {
     if (!apiKeyStatusBadgeEl) return;
-    const activeRecord = getActiveApiKeyRecord();
-    if (activeRecord) {
-        apiKeyStatusBadgeEl.textContent = isFrenchLocale()
-        ? `Clé API active : ${maskApiKey(activeRecord.key)}`
-        : `API key active: ${maskApiKey(activeRecord.key)}`;
-        apiKeyStatusBadgeEl.className = "status-chip active";
-        apiKeyStatusBadgeEl.title = l("Stored locally in this browser.", "Stockée localement dans ce navigateur.");
+    if (!hasDesktopBridge()) {
+        apiKeyStatusBadgeEl.textContent = l("Desktop app required", "Application de bureau requise");
+        apiKeyStatusBadgeEl.className = "status-chip inactive";
+        apiKeyStatusBadgeEl.title = desktopLaunchMessage();
         return;
     }
-
-    apiKeyStatusBadgeEl.textContent = l("API key required", "Clé API requise");
-    apiKeyStatusBadgeEl.className = "status-chip inactive";
-    apiKeyStatusBadgeEl.title = l("Choose or save a key to use the app.", "Choisissez ou enregistrez une clé pour utiliser l’application.");
+    if (!credentialState.loaded) {
+        apiKeyStatusBadgeEl.textContent = l("Checking AI credentials", "Vérification des identifiants IA");
+        apiKeyStatusBadgeEl.className = "status-chip subtle";
+        return;
+    }
+    if (credentialState.lastError) {
+        apiKeyStatusBadgeEl.textContent = l("Credential check failed", "Échec de la vérification des identifiants");
+        apiKeyStatusBadgeEl.className = "status-chip inactive";
+        apiKeyStatusBadgeEl.title = credentialState.lastError;
+        return;
+    }
+    const configured = ["openai", "anthropic"].filter(hasCredential);
+    if (configured.length === 2) {
+        apiKeyStatusBadgeEl.textContent = l("OpenAI & Anthropic configured", "OpenAI et Anthropic configurés");
+        apiKeyStatusBadgeEl.className = "status-chip active";
+    } else if (configured.length === 1) {
+        const ready = providerLabel(configured[0]);
+        const missing = providerLabel(configured[0] === "openai" ? "anthropic" : "openai");
+        apiKeyStatusBadgeEl.textContent = l(`${ready} configured • ${missing} not configured`, `${ready} configuré • ${missing} non configuré`);
+        apiKeyStatusBadgeEl.className = "status-chip subtle";
+    } else {
+        apiKeyStatusBadgeEl.textContent = l("AI credentials required", "Identifiants IA requis");
+        apiKeyStatusBadgeEl.className = "status-chip inactive";
+    }
+    apiKeyStatusBadgeEl.title = l("Open the credential panel to save, replace, or remove provider keys.", "Ouvrez le panneau d’identifiants pour enregistrer, remplacer ou supprimer les clés des fournisseurs.");
 }
 
 function updateApiKeyUi() {
     ensureApiKeyUi();
     updateApiKeyUiText();
-    renderSavedApiKeyList();
+    updateProviderCredentialCards();
     updateApiKeyStatusUi();
 }
 
-function openApiKeyDialog() {
+function openApiKeyDialog(focusProvider = "") {
     updateApiKeyUi();
-    if (newApiKeyInputEl) newApiKeyInputEl.value = "";
     if (!apiKeyDialogEl) return;
 
     if (typeof apiKeyDialogEl.showModal === "function") {
@@ -1065,11 +941,16 @@ function openApiKeyDialog() {
         apiKeyDialogEl.setAttribute("open", "open");
     }
 
+    void refreshCredentialStatus({ force: true }).then(() => {
+        updateApiKeyUi();
+        refreshControls();
+    }).catch(() => {
+        setStatus(l("Could not refresh provider credential status.", "Impossible d’actualiser l’état des identifiants des fournisseurs."), true);
+    });
+
     window.setTimeout(() => {
-        const firstRadio = apiKeyDialogEl.querySelector('input[name="savedApiKeyChoice"]:checked') ||
-        apiKeyDialogEl.querySelector('input[name="savedApiKeyChoice"]');
-        if (firstRadio) firstRadio.focus();
-        else newApiKeyInputEl?.focus();
+        const preferred = credentialUiByProvider[focusProvider]?.input;
+        (preferred || credentialUiByProvider.openai?.input || credentialUiByProvider.anthropic?.input)?.focus();
     }, 0);
 }
 
@@ -1082,96 +963,106 @@ function closeApiKeyDialog() {
     }
 }
 
-function maybeShowInitialApiKeyDialog() {
-    if (initialApiKeyDialogShown) return;
-    initialApiKeyDialogShown = true;
-
-    if (getApiKey()) {
-        updateApiKeyUi();
-        refreshControls();
+async function saveProviderCredential(provider) {
+    const refs = credentialUiByProvider[provider];
+    const key = sanitizeText(refs?.input?.value || "");
+    if (!key) {
+        setStatus(l(`Enter a ${providerLabel(provider)} API key first.`, `Entrez d’abord une clé API ${providerLabel(provider)}.`), true);
+        refs?.input?.focus();
         return;
     }
-
-    openApiKeyDialog();
-}
-
-function useSelectedApiKeyFromDialog() {
-    const id = getSelectedApiKeyIdFromDialog();
-    if (!id) {
-        setStatus(l("Select a saved API key first.", "Sélectionnez d’abord une clé API enregistrée."), true);
-        return;
-    }
-
-    const record = activateSavedApiKey(id);
-    if (!record) {
-        updateApiKeyUi();
-        refreshControls();
-        setStatus(l("That saved API key no longer exists.", "Cette clé API enregistrée n’existe plus."), true);
-        return;
-    }
-
-    closeApiKeyDialog();
+    credentialState.pendingProvider = provider;
     updateApiKeyUi();
-    refreshControls();
-    setStatus(
-        isFrenchLocale()
-        ? `Utilisation de la clé API ${maskApiKey(record.key)}.`
-        : `Using API key ${maskApiKey(record.key)}.`
-    );
-}
-
-function saveNewApiKeyFromDialog() {
     try {
-        const record = saveAndUseApiKey(newApiKeyInputEl?.value || "");
-        if (newApiKeyInputEl) newApiKeyInputEl.value = "";
-        closeApiKeyDialog();
+        await getCredentialsBridge().save(provider, key);
+        if (refs?.input) refs.input.value = "";
+        credentialState.loaded = false;
+        credentialState.lastError = "";
+        await refreshCredentialStatus({ force: true });
         updateApiKeyUi();
         refreshControls();
-        setStatus(
-            isFrenchLocale()
-            ? `Nouvelle clé API enregistrée et activée : ${maskApiKey(record.key)}.`
-            : `Saved and activated new API key ${maskApiKey(record.key)}.`
-        );
+        setStatus(l(`${providerLabel(provider)} credential saved.`, `Identifiant ${providerLabel(provider)} enregistré.`));
     } catch (error) {
-        setStatus(error?.message || l("Could not save the API key.", "Impossible d’enregistrer la clé API."), true);
+        const detail = safeBridgeErrorMessage(error);
+        setStatus(l(
+            `Could not save the ${providerLabel(provider)} credential${detail ? `: ${detail}` : "."}`,
+            `Impossible d’enregistrer l’identifiant ${providerLabel(provider)}${detail ? ` : ${detail}` : "."}`
+        ), true);
+    } finally {
+        credentialState.pendingProvider = "";
+        updateApiKeyUi();
     }
 }
 
-function deleteSelectedApiKeyFromDialog() {
-    const id = getSelectedApiKeyIdFromDialog();
-    if (!id) {
-        setStatus(l("Select a saved API key first.", "Sélectionnez d’abord une clé API enregistrée."), true);
+async function removeProviderCredential(provider) {
+    credentialState.pendingProvider = provider;
+    updateApiKeyUi();
+    try {
+        await getCredentialsBridge().remove(provider);
+        credentialState.loaded = false;
+        credentialState.lastError = "";
+        await refreshCredentialStatus({ force: true });
+        refreshControls();
+        setStatus(l(`${providerLabel(provider)} credential removed.`, `Identifiant ${providerLabel(provider)} supprimé.`));
+    } catch (error) {
+        const detail = safeBridgeErrorMessage(error);
+        setStatus(l(
+            `Could not remove the ${providerLabel(provider)} credential${detail ? `: ${detail}` : "."}`,
+            `Impossible de supprimer l’identifiant ${providerLabel(provider)}${detail ? ` : ${detail}` : "."}`
+        ), true);
+    } finally {
+        credentialState.pendingProvider = "";
+        updateApiKeyUi();
+    }
+}
+
+async function maybeShowInitialApiKeyDialog() {
+    if (initialCredentialDialogShown) return;
+    initialCredentialDialogShown = true;
+    try {
+        await refreshCredentialStatus();
+    } catch {
         return;
     }
-
-    removeSavedApiKey(id);
-    updateApiKeyUi();
-    refreshControls();
-
-    if (!getApiKey()) {
-        setStatus(l("Saved API key deleted. Choose or add another key.", "Clé API supprimée. Choisissez ou ajoutez-en une autre."), true);
-    } else {
-        setStatus(l("Saved API key deleted.", "Clé API supprimée."));
-    }
+    if (!hasCredential("openai") && !hasCredential("anthropic")) openApiKeyDialog();
 }
 
 function normalizeMatchModel(value) {
     const normalized = String(value || "").trim();
-    return AVAILABLE_MATCH_MODELS.some((option) => option.value === normalized)
+    return MODEL_CATALOG.isSupportedModel(normalized)
     ? normalized
     : DEFAULT_PARTICIPANT_MODEL;
+}
+
+function getMatchModel(modelId) {
+    return MODEL_CATALOG.getModel(normalizeMatchModel(modelId));
+}
+
+function getModelProvider(modelId) {
+    return MODEL_CATALOG.getProviderForModel(normalizeMatchModel(modelId));
+}
+
+function formatModelLabel(modelId, { includeProvider = true } = {}) {
+    const model = getMatchModel(modelId);
+    if (!model) return String(modelId || "");
+    return includeProvider ? `${model.label} (${providerLabel(model.provider)})` : model.label;
 }
 
 function populateMatchModelSelect(selectEl, selectedValue = DEFAULT_PARTICIPANT_MODEL) {
     if (!selectEl) return;
     const finalValue = normalizeMatchModel(selectedValue || selectEl.value || DEFAULT_PARTICIPANT_MODEL);
     selectEl.innerHTML = "";
-    AVAILABLE_MATCH_MODELS.forEach((optionData) => {
-        const option = document.createElement("option");
-        option.value = optionData.value;
-        option.textContent = optionData.label;
-        selectEl.appendChild(option);
-    });
+    for (const provider of ["openai", "anthropic"]) {
+        const group = document.createElement("optgroup");
+        group.label = providerLabel(provider);
+        AVAILABLE_MATCH_MODELS.filter((model) => model.provider === provider).forEach((model) => {
+            const option = document.createElement("option");
+            option.value = model.id;
+            option.textContent = model.label;
+            group.appendChild(option);
+        });
+        selectEl.appendChild(group);
+    }
     selectEl.value = finalValue;
 }
 
@@ -1192,7 +1083,7 @@ function syncVoiceModeStateFromControls() {
 }
 
 function shouldUseOpenAiSpeechPlayback() {
-    return normalizeVoiceMode(state.voiceMode) === "openai" && !!getApiKey() && !state.forceBrowserSpeech;
+    return normalizeVoiceMode(state.voiceMode) === "openai" && hasCredential("openai") && !state.forceBrowserSpeech;
 }
 
 function shouldUseBrowserSpeechPlayback() {
@@ -1640,8 +1531,8 @@ function getLeadSummaryText() {
         return l("Pending toss.", "Tirage en attente.");
     }
     return isFrenchLocale()
-    ? `${caseLabel(1)} : ${speakerName(state.leadByCase[1])} • ${caseLabel(2)} : ${speakerName(state.leadByCase[2])}`
-    : `${caseLabel(1)}: ${speakerName(state.leadByCase[1])} • ${caseLabel(2)}: ${speakerName(state.leadByCase[2])}`;
+    ? `Nº 1 : ${speakerName(state.leadByCase[1])} • Nº 2 : ${speakerName(state.leadByCase[2])}`
+    : `#1: ${speakerName(state.leadByCase[1])} • #2: ${speakerName(state.leadByCase[2])}`;
 }
 
 function getCoinTossSummaryText() {
@@ -1650,6 +1541,30 @@ function getCoinTossSummaryText() {
     return isFrenchLocale()
     ? `${coinSideLabel(state.coinResult)} • ${speakerName(state.coinWinner)} gagne`
     : `${coinSideLabel(state.coinResult)} • ${speakerName(state.coinWinner)} wins`;
+}
+
+function buildParticipantModelSummary(participantOneMode) {
+    const summary = document.createElement("div");
+    summary.className = "participant-model-summary";
+    const participants = [
+        {
+            name: state.names.human,
+            model: participantOneMode === "ai"
+                ? formatModelLabel(state.participantModels.human, { includeProvider: false })
+                : l("Human", "Humain")
+        },
+        {
+            name: state.names.ai,
+            model: formatModelLabel(state.participantModels.ai, { includeProvider: false })
+        }
+    ];
+    participants.forEach(({ name, model }) => {
+        const line = document.createElement("div");
+        line.className = "participant-model-line";
+        line.textContent = `${name} — ${model}`;
+        summary.appendChild(line);
+    });
+    return summary;
 }
 
 function renderMatchSetupSummary() {
@@ -1664,16 +1579,12 @@ function renderMatchSetupSummary() {
     const items = [
         {
             label: l("Participants", "Participantes"),
-            value: `${state.names.human} (${participantOneMode === "ai" ? l("AI", "IA") : l("Human", "Humain")}) • ${state.names.ai} (${l("AI", "IA")})`,
+            value: buildParticipantModelSummary(participantOneMode),
             kind: "participants-summary"
         },
         {
-            label: l("Models", "Modèles"),
-            value: `${state.participantModels.human} • ${state.participantModels.ai}`
-        },
-        {
             label: l("Voice", "Voix"),
-            value: state.voiceMode === "browser" ? l("Browser voice", "Voix du navigateur") : l("OpenAI voice", "Voix OpenAI")
+            value: state.voiceMode === "browser" ? l("Browser", "Navigateur") : "OpenAI"
         },
         {
             label: l("Coin toss", "Tirage"),
@@ -1681,7 +1592,7 @@ function renderMatchSetupSummary() {
             kind: "coin-summary"
         },
         {
-            label: l("Case order", "Ordre des cas"),
+            label: l("Cases", "Cas"),
             value: getLeadSummaryText(),
             kind: "order-summary"
         }
@@ -2374,18 +2285,36 @@ function chunkTextForSpeech(text, maxLen = SPEECH_CHUNK_MAX) {
     return chunks;
 }
 
-function buildSpeechInstructions(entry) {
-    const voiceKey = String(entry?.voiceKey || entry?.kind || "");
-    if (isFrenchLocale()) {
-        if (voiceKey === "moderator") return "Parle clairement, calmement et formellement comme un modérateur officiel de la Coupe éthique Canada, en français québécois naturel. Utilise une voix mature, posée et légèrement plus autoritaire. Ceci est une voix générée par IA.";
-        if (voiceKey.startsWith("judge")) return "Parle clairement, brièvement et avec neutralité comme un juge de la Coupe éthique Canada, en français québécois naturel. Ceci est une voix générée par IA.";
-        if (voiceKey === "ai-alt") return "Parle clairement, naturellement et avec réflexion comme un seul participant de la Coupe éthique Canada, en français québécois naturel. Utilise une voix plus grave et plus posée, distincte de l’autre participante IA. Ceci est une voix générée par IA.";
-        return "Parle clairement, naturellement et avec réflexion comme un seul participant de la Coupe éthique Canada, en français québécois naturel. Utilise une voix chaleureuse, articulée et distincte de l’autre participante IA s’il y en a une. Ceci est une voix générée par IA.";
+function chunkModeratorTextForSpeech(text, maxLen = SPEECH_CHUNK_MAX) {
+    return SPEECH_PACING.buildModeratorSpeechChunks(text, {
+        maxLength: maxLen,
+        locale: isFrenchLocale() ? "fr-CA" : "en-US"
+    });
+}
+
+function getAudioBridge() {
+    const bridge = window.ethicsApi?.audio;
+    if (!bridge || typeof bridge.speech !== "function" || typeof bridge.transcribe !== "function") {
+        throw new Error(l("The desktop audio bridge is unavailable.", "Le pont audio de l’application de bureau n’est pas disponible."));
     }
-    if (voiceKey === "moderator") return "Speak clearly, calmly, and formally like an official Ethics Bowl moderator. Use a mature female voice with a steady, measured cadence and a slightly lower, more authoritative tone. This is an AI-generated voice.";
-    if (voiceKey.startsWith("judge")) return "Speak clearly, briefly, and neutrally like an Ethics Bowl judge. This is an AI-generated voice.";
-    if (voiceKey === "ai-alt") return "Speak clearly, naturally, and thoughtfully like a single Ethics Bowl participant. Use a grounded, lower, more measured voice clearly distinct from the other AI participant. This is an AI-generated voice.";
-    return "Speak clearly, naturally, and thoughtfully like a single Ethics Bowl participant. Use a warm, articulate voice that is brighter and more conversational than the moderator and clearly distinct from the other AI participant if there is one. This is an AI-generated voice.";
+    return bridge;
+}
+
+function toUint8Array(bytes) {
+    if (bytes instanceof Uint8Array) return bytes;
+    if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes);
+    if (ArrayBuffer.isView(bytes)) return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return new Uint8Array(Array.isArray(bytes) ? bytes : []);
+}
+
+async function blobToByteArray(blob) {
+    return new Uint8Array(await blob.arrayBuffer());
+}
+
+function createLocalAbortError() {
+    const error = new Error(STOP_SPEECH_ERROR);
+    error.name = "AbortError";
+    return error;
 }
 
 function pickBrowserVoice(voiceKey) {
@@ -2419,30 +2348,23 @@ function getBrowserSpeechSettings(entry) {
 }
 
 async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct" } = {}) {
-    const apiKey = getApiKey();
-    if (!apiKey) throw new Error("No API key available for OpenAI speech.");
+    if (!hasCredential("openai")) throw new Error(l("An OpenAI credential is required for OpenAI read-aloud.", "Un identifiant OpenAI est requis pour la lecture OpenAI."));
     if (token !== state.speechToken) return null;
     const controller = new AbortController();
     state.currentSpeechController = controller;
     state.currentSpeechControllerKind = controllerKind;
     refreshSpeechUi();
     try {
-        const response = await fetch(OPENAI_SPEECH_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-            body: JSON.stringify({
-                model: "gpt-4o-mini-tts",
-                voice: AUTO_SPEAK_VOICES[entry.voiceKey] || AUTO_SPEAK_VOICES[entry.kind] || "alloy",
-                input: entry.text.slice(0, MAX_TTS_CHARS),
-                                 instructions: buildSpeechInstructions(entry),
-                                 response_format: "mp3"
-            }),
-            signal: controller.signal
+        const result = await getAudioBridge().speech({
+            model: AUDIO_MODELS.speech,
+            voice: AUTO_SPEAK_VOICES[entry.voiceKey] || AUTO_SPEAK_VOICES[entry.kind] || "alloy",
+            input: entry.text.slice(0, MAX_TTS_CHARS),
+            format: "mp3"
         });
+        if (controller.signal.aborted) throw createLocalAbortError();
         if (token !== state.speechToken) return null;
-        if (!response.ok) throw new Error(await parseApiError(response));
-        const blob = await response.blob();
-        if (token !== state.speechToken) return null;
+        const audioBytes = toUint8Array(result?.bytes);
+        const blob = new Blob([audioBytes], { type: sanitizeText(result?.mimeType) || "audio/mpeg" });
         if (!blob.size) throw new Error("Empty speech audio response.");
         return { entry, audioUrl: URL.createObjectURL(blob) };
     } finally {
@@ -2519,6 +2441,13 @@ async function playBrowserSpeechChunk(entry, token) {
         state.speechPlaybackActive = false;
         refreshSpeechUi();
     }
+}
+
+async function waitForSpeechEntryPause(entry, token) {
+    const pauseAfterMs = Math.max(0, Math.min(2000, Number(entry?.pauseAfterMs) || 0));
+    if (!pauseAfterMs || token !== state.speechToken) return;
+    await new Promise((resolve) => window.setTimeout(resolve, pauseAfterMs));
+    if (token !== state.speechToken) throw createLocalAbortError();
 }
 
 function kickOpenAiSpeechLookahead(token) {
@@ -2610,6 +2539,7 @@ async function handleOpenAiSpeechFailure(error, token, fallbackEntry = null, res
     beginSpeechProgressForQueueEntry(entry);
     try {
         await playBrowserSpeechChunk(entry, token);
+        await waitForSpeechEntryPause(entry, token);
         setStatus(l("OpenAI voice failed. Falling back to browser voice.", "La voix OpenAI a échoué. Retour à la voix du navigateur."), true);
         return true;
     } catch (browserError) {
@@ -2632,6 +2562,7 @@ async function processSpeechQueue(token = state.speechToken) {
                 beginSpeechProgressForQueueEntry(entry);
                 try {
                     await playBrowserSpeechChunk(entry, token);
+                    await waitForSpeechEntryPause(entry, token);
                     markSpeechChunkComplete(entry.transcriptIndex);
                 } catch (error) {
                     if (token !== state.speechToken || error?.name === "AbortError" || error?.message === STOP_SPEECH_ERROR) break;
@@ -2663,6 +2594,7 @@ async function processSpeechQueue(token = state.speechToken) {
             kickOpenAiSpeechLookahead(token);
             try {
                 await playPreparedOpenAiSpeechChunk(prepared, token);
+                await waitForSpeechEntryPause(prepared.entry, token);
                 markSpeechChunkComplete(prepared.entry.transcriptIndex);
             } catch (error) {
                 if (token !== state.speechToken || error?.name === "AbortError" || error?.message === STOP_SPEECH_ERROR) break;
@@ -2691,11 +2623,15 @@ function enqueueTranscriptSpeech(kind, text, transcriptIndex = -1, voiceKey = ""
     if (!AUTO_SPEAK_MESSAGE_KINDS.has(kind)) return;
     const normalized = normalizeSpeechText(text);
     if (!normalized) return;
-    const chunks = chunkTextForSpeech(normalized, SPEECH_CHUNK_MAX)
+    const speechChunks = kind === "moderator"
+        ? chunkModeratorTextForSpeech(text, SPEECH_CHUNK_MAX)
+        : chunkTextForSpeech(normalized, SPEECH_CHUNK_MAX).map((chunk) => ({ text: chunk, pauseAfterMs: 0 }));
+    const chunks = speechChunks
     .map((chunk) => ({
         kind,
         voiceKey: voiceKey || kind,
-        text: chunk.slice(0, MAX_TTS_CHARS),
+        text: chunk.text.slice(0, MAX_TTS_CHARS),
+        pauseAfterMs: chunk.pauseAfterMs,
                      transcriptIndex
     }))
     .filter((entry) => entry.text);
@@ -2937,7 +2873,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
             completedPasses = Math.min(totalPasses, completedPasses);
 
             if (completedPasses < 1 || !text) {
-                text = sanitizeText(await callOpenAI({
+                text = sanitizeText(await callAI({
                     model: getParticipantModel(phase.speaker),
                                                          systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                          userPrompt: buildAiTurnPrompt(phase),
@@ -2970,7 +2906,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
             }
 
             for (let revisionNumber = Math.max(1, completedPasses); revisionNumber <= revisionPasses; revisionNumber += 1) {
-                const revisedText = sanitizeText(await callOpenAI({
+                const revisedText = sanitizeText(await callAI({
                     model: getParticipantModel(phase.speaker),
                                                                   systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                                   userPrompt: buildAiTurnRevisionPrompt(phase, text, revisionNumber, revisionPasses, baselineRevisionWordCount),
@@ -3620,256 +3556,48 @@ function computeVoteTally(cards) {
     return { humanVotes, aiVotes, result };
 }
 
-function parseApiErrorText(raw) {
-    try {
-        const parsed = JSON.parse(raw);
-        return parsed?.error?.message || raw;
-    } catch {
-        return raw;
+function getAiBridge() {
+    const bridge = window.ethicsApi?.ai;
+    if (!bridge || typeof bridge.generate !== "function") {
+        throw new Error(l("The desktop AI bridge is unavailable.", "Le pont IA de l’application de bureau n’est pas disponible."));
     }
+    return bridge;
 }
 
-async function parseApiError(response) {
-    const raw = await response.text();
-    return parseApiErrorText(raw) || `HTTP ${response.status}`;
+async function requireProviderCredential(provider, purpose = "") {
+    await refreshCredentialStatus();
+    if (hasCredential(provider)) return;
+    openApiKeyDialog(provider);
+    const providerName = providerLabel(provider);
+    throw new Error(purpose
+        ? l(`A ${providerName} API key is required for ${purpose}.`, `Une clé API ${providerName} est requise pour ${purpose}.`)
+        : l(`A ${providerName} API key is required.`, `Une clé API ${providerName} est requise.`));
 }
 
-function extractTextFromOutputItem(item) {
-    if (!item || typeof item !== "object") return "";
-    let text = "";
-    if (typeof item.text === "string") text += item.text;
-    if (typeof item.output_text === "string") text += item.output_text;
-    if (typeof item.refusal === "string") text += item.refusal;
-    if (typeof item.content === "string") text += item.content;
-    if (Array.isArray(item.content)) {
-        item.content.forEach((part) => {
-            if (typeof part?.text === "string") text += part.text;
-            if (typeof part?.refusal === "string") text += part.refusal;
-            if (typeof part?.content === "string") text += part.content;
-        });
-    }
-    return text;
-}
-
-function tryParseJsonString(raw) {
-    const text = stripJsonFence(String(raw || "").trim());
-    if (!text) return null;
-    try { return JSON.parse(text); } catch {}
-    const first = text.indexOf("{");
-    const last = text.lastIndexOf("}");
-    if (first >= 0 && last > first) {
-        try { return JSON.parse(text.slice(first, last + 1)); } catch {}
-    }
-    return null;
-}
-
-function extractStructuredJsonFromOutputItem(item) {
-    if (!item || typeof item !== "object") return null;
-    if (item.parsed && typeof item.parsed === "object") return item.parsed;
-    if (item.json && typeof item.json === "object") return item.json;
-    if (item.output_json && typeof item.output_json === "object") return item.output_json;
-    if (item.result && typeof item.result === "object") return item.result;
-    if (Array.isArray(item.content)) {
-        for (const part of item.content) {
-            if (!part || typeof part !== "object") continue;
-            if (part.parsed && typeof part.parsed === "object") return part.parsed;
-            if (part.json && typeof part.json === "object") return part.json;
-            if (part.output_json && typeof part.output_json === "object") return part.output_json;
-            if (part.result && typeof part.result === "object") return part.result;
-            const parsedFromText = tryParseJsonString(part.text || part.output_text || part.content || part.arguments || "");
-            if (parsedFromText && typeof parsedFromText === "object") return parsedFromText;
-        }
-    }
-    const parsedFromStrings = tryParseJsonString(item.text || item.output_text || item.content || item.arguments || "");
-    if (parsedFromStrings && typeof parsedFromStrings === "object") return parsedFromStrings;
-    return null;
-}
-
-function extractStructuredJsonFromResponseObject(responseObj) {
-    if (!responseObj || typeof responseObj !== "object") return null;
-    if (responseObj.output_parsed && typeof responseObj.output_parsed === "object") return responseObj.output_parsed;
-    if (responseObj.parsed && typeof responseObj.parsed === "object") return responseObj.parsed;
-    if (Array.isArray(responseObj.output)) {
-        for (const item of responseObj.output) {
-            const parsed = extractStructuredJsonFromOutputItem(item);
-            if (parsed && typeof parsed === "object") return parsed;
-        }
-    }
-    let fallbackText = "";
-    if (typeof responseObj.output_text === "string") fallbackText = responseObj.output_text;
-    else if (Array.isArray(responseObj.output_text)) {
-        fallbackText = responseObj.output_text.map((item) => {
-            if (typeof item === "string") return item;
-            if (typeof item?.text === "string") return item.text;
-            return "";
-        }).join("");
-    } else if (typeof responseObj.text === "string") fallbackText = responseObj.text;
-    const parsedFromFallback = tryParseJsonString(fallbackText);
-    return parsedFromFallback && typeof parsedFromFallback === "object" ? parsedFromFallback : null;
-}
-
-function extractTextFromResponseObject(responseObj) {
-    if (!responseObj || typeof responseObj !== "object") return "";
-    if (typeof responseObj.output_text === "string" && responseObj.output_text.trim()) return responseObj.output_text.trim();
-    if (Array.isArray(responseObj.output_text)) {
-        const joined = responseObj.output_text.map((item) => {
-            if (typeof item === "string") return item;
-            if (typeof item?.text === "string") return item.text;
-            return "";
-        }).join("").trim();
-        if (joined) return joined;
-    }
-    if (typeof responseObj.text === "string" && responseObj.text.trim()) return responseObj.text.trim();
-    const output = Array.isArray(responseObj.output) ? responseObj.output : [];
-    return output.map(extractTextFromOutputItem).join("").trim();
-}
-
-function buildOpenAiEmptyTextError(responseObj) {
-    const status = String(responseObj?.status || "").trim();
-    const reason = String(responseObj?.incomplete_details?.reason || responseObj?.status_details?.reason || "").trim();
-    const message = String(
-        responseObj?.error?.message ||
-        responseObj?.incomplete_details?.message ||
-        responseObj?.status_details?.message ||
-        ""
-    ).trim();
-
-    if (reason === "max_output_tokens") {
-        return l(
-            "The model used its output budget before producing visible text. Try a lower reasoning setting or a higher output limit.",
-            "Le modèle a épuisé son budget de sortie avant de produire du texte visible. Essayez un niveau de raisonnement plus faible ou une limite de sortie plus élevée."
-        );
-    }
-    if (message) return message;
-    if (status && reason) {
-        return isFrenchLocale()
-        ? `Le modèle n’a renvoyé aucun texte (statut : ${status}, raison : ${reason}).`
-        : `The model returned no text (status: ${status}, reason: ${reason}).`;
-    }
-    if (status) {
-        return isFrenchLocale()
-        ? `Le modèle n’a renvoyé aucun texte (statut : ${status}).`
-        : `The model returned no text (status: ${status}).`;
-    }
-    return l("The model returned no text.", "Le modèle n’a renvoyé aucun texte.");
-}
-
-function modelSupportsReasoningEffort(modelName) {
-    return /^gpt-5(?:[.-]|$)/i.test(String(modelName || ""));
-}
-
-function shouldRetryOpenAiResponseStatus(status) {
-    const code = Number(status);
-    return Number.isFinite(code) && code >= 500 && code < 600;
-}
-
-function shouldRetryOpenAiFetchError(error) {
-    if (!error) return false;
-    if (error.name === "AbortError") return false;
-    if (error instanceof TypeError) return true;
-    const message = String(error?.message || "").toLowerCase();
-    return !!message && (
-        message.includes("failed to fetch") ||
-        message.includes("networkerror") ||
-        message.includes("network error") ||
-        message.includes("load failed")
-    );
-}
-
-function getOpenAiRetryDelayMs(attemptNumber) {
-    return Math.min(1600, 350 * (2 ** Math.max(0, attemptNumber - 1)));
-}
-
-async function callOpenAI({
+async function callAI({
     model = DEFAULT_JUDGE_MODEL,
     systemPrompt,
     userPrompt,
     maxTokens = 800,
-    reasoningEffort = null,
-    jsonSchema = null,
-    allowOutputBudgetRecovery = true
+    reasoningEffort = STUDENT_REASONING_EFFORT,
+    jsonSchema = null
 }) {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        openApiKeyDialog();
-        throw new Error(l("Choose or save an API key first.", "Choisissez ou enregistrez d’abord une clé API."));
-    }
-    const resolvedModel = String(model || DEFAULT_JUDGE_MODEL).trim() || DEFAULT_JUDGE_MODEL;
-    const body = {
+    const resolvedModel = normalizeMatchModel(model || DEFAULT_JUDGE_MODEL);
+    const provider = getModelProvider(resolvedModel);
+    if (!provider) throw new Error(l("The selected debate model is not supported.", "Le modèle de débat sélectionné n’est pas pris en charge."));
+    await requireProviderCredential(provider, formatModelLabel(resolvedModel, { includeProvider: false }));
+    const result = await getAiBridge().generate({
         model: resolvedModel,
-        instructions: [HARDCODED_ETHICS_BOWL_RULES, localeDirectiveForModels(), systemPrompt].filter(Boolean).join("\n\n"),
-        input: userPrompt,
-        max_output_tokens: maxTokens
-    };
-    if (jsonSchema) {
-        body.text = {
-            format: {
-                type: "json_schema",
-                name: jsonSchema.name,
-                strict: jsonSchema.strict !== false,
-                schema: jsonSchema.schema
-            }
-        };
-    }
-    if (reasoningEffort && modelSupportsReasoningEffort(resolvedModel)) body.reasoning = { effort: reasoningEffort };
-    const requestBody = JSON.stringify(body);
-    const maxAttempts = 3;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        let response;
-        try {
-            response = await fetch(OPENAI_RESPONSES_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-                body: requestBody
-            });
-        } catch (error) {
-            if (!shouldRetryOpenAiFetchError(error) || attempt >= maxAttempts) throw error;
-            console.warn(`OpenAI request failed on attempt ${attempt} of ${maxAttempts}; retrying.`, error);
-            await delayMs(getOpenAiRetryDelayMs(attempt));
-            continue;
-        }
-
-        if (!response.ok) {
-            const apiError = await parseApiError(response);
-            if (!shouldRetryOpenAiResponseStatus(response.status) || attempt >= maxAttempts) {
-                throw new Error(apiError);
-            }
-            console.warn(`OpenAI request returned HTTP ${response.status} on attempt ${attempt} of ${maxAttempts}; retrying.`);
-            await delayMs(getOpenAiRetryDelayMs(attempt));
-            continue;
-        }
-
-        const data = await response.json();
-        if (jsonSchema) {
-            const structured = extractStructuredJsonFromResponseObject(data);
-            if (structured && typeof structured === "object") return structured;
-            const text = extractTextFromResponseObject(data);
-            const parsed = tryParseJsonString(text);
-            if (parsed && typeof parsed === "object") return parsed;
-            throw new Error(l("The model returned no structured JSON.", "Le modèle n’a renvoyé aucun JSON structuré."));
-        }
-        const text = extractTextFromResponseObject(data);
-        if (!text) {
-            const emptyTextReason = String(data?.incomplete_details?.reason || data?.status_details?.reason || "").trim();
-            if (allowOutputBudgetRecovery && emptyTextReason === "max_output_tokens" && !jsonSchema) {
-                const recoveredMaxTokens = Math.min(12000, Math.max(maxTokens + 1200, Math.round(maxTokens * 1.5)));
-                const recoveredReasoningEffort = modelSupportsReasoningEffort(resolvedModel) ? null : reasoningEffort;
-                console.warn(`OpenAI response hit max_output_tokens without visible text for model ${resolvedModel}; retrying with max_output_tokens=${recoveredMaxTokens} and reasoning=${recoveredReasoningEffort || "default"}.`);
-                return callOpenAI({
-                    model: resolvedModel,
-                    systemPrompt,
-                    userPrompt,
-                    maxTokens: recoveredMaxTokens,
-                    reasoningEffort: recoveredReasoningEffort,
-                    jsonSchema,
-                    allowOutputBudgetRecovery: false
-                });
-            }
-            throw new Error(buildOpenAiEmptyTextError(data));
-        }
-        return text;
-    }
-    throw new Error(l("The OpenAI request failed.", "La requête OpenAI a échoué."));
+        systemPrompt: [HARDCODED_ETHICS_BOWL_RULES, localeDirectiveForModels(), systemPrompt].filter(Boolean).join("\n\n"),
+        userPrompt: String(userPrompt || ""),
+        maxTokens,
+        reasoningEffort,
+        jsonSchema
+    });
+    if (result && typeof result === "object") return result;
+    const text = String(result || "").trim();
+    if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
+    return text;
 }
 
 function stripJsonFence(raw) {
@@ -4250,12 +3978,12 @@ async function generateInitialAiJudgeQuestionDraft({ caseNum, judgeNumber, prior
     while (expectedRunId === state.matchRunId) {
         attempt += 1;
         try {
-            const raw = await callOpenAI({
+            const raw = await callAI({
                 model: getJudgeModel(),
                                          systemPrompt: buildAiJudgeSystemPrompt(),
                                          userPrompt: prompt,
                                          maxTokens: 600,
-                                         reasoningEffort: "low"
+                                         reasoningEffort: JUDGE_REASONING_EFFORT
             });
             const extracted = extractAiJudgeQuestionCandidate(raw);
             const validation = validateAiJudgeQuestion(extracted, priorQuestions);
@@ -4281,12 +4009,12 @@ async function reviseDraftedAiJudgeQuestion({ caseNum, judgeNumber, priorQuestio
     while (expectedRunId === state.matchRunId) {
         attempt += 1;
         try {
-            const raw = await callOpenAI({
+            const raw = await callAI({
                 model: getJudgeModel(),
                                          systemPrompt: buildAiJudgeSystemPrompt(),
                                          userPrompt: prompt,
                                          maxTokens: 600,
-                                         reasoningEffort: "low"
+                                         reasoningEffort: JUDGE_REASONING_EFFORT
             });
             const extracted = extractAiJudgeQuestionCandidate(raw);
             const validation = validateAiJudgeQuestion(extracted, priorQuestions);
@@ -4361,61 +4089,13 @@ function buildAiTurnPrompt(phase) {
     const caseData = state.cases[phase.caseNum];
     const isJudgeAnswer = phase.kind === "judgeAnswer";
     const judgeQuestion = isJudgeAnswer ? getJudgeQuestionForAnswerPhase(phase) : "";
-    const caseTranscript = clipText(transcriptAsPlainText(phase.caseNum), 15000);
-    const wordGuidance = getPhaseWordGuidance(phase);
-
-    let phaseInstruction = "";
-    let targetWords = "";
-
-    if (phase.kind === "speech" && phase.subtype === "presentation") {
-        phaseInstruction =
-        "Give a concise Ethics Bowl presentation. Answer the moderator's question directly. The judges' grading criteria are A (0-5): The participant presented a clear, identifiable position and supported it with identifiable reasons and the reasons were well articulated and jointly coherent. Criterion B (0-5): The participant identified the deep moral tension or tensions and applied moral concepts, such as duties, values, rights, or responsibilities, to relevant aspects of the case in a way that tackled the underlying moral tensions within the case. Presentation criterion C (0-5): The participant acknowledged strong, conflicting viewpoints and charitably explained why they pose a serious challenge to the participant's position and argued that the participant's position better defuses the moral tension within the case.";
-    targetWords = `Length target: ${wordGuidance.min}-${wordGuidance.max} words. Aim near ${wordGuidance.preferredTarget} words. Hard cap: ${wordGuidance.max} words.`;
-    }
-    if (phase.kind === "speech" && phase.subtype === "commentary") {
-        phaseInstruction =
-        "Offer a concise commentary on the leading participant's presentation. The judges' grading criteria are (0-10): The participant prioritized the main suggestions, questions, and critiques and charitably explained why they pose a serious challenge to the participant's position, in a way that made the participant's position clearer, and refined the participant's position, or clearly explained why such refinement was not required.";
-    targetWords = `Length target: ${wordGuidance.min}-${wordGuidance.max} words. Aim near ${wordGuidance.preferredTarget} words. Hard cap: ${wordGuidance.max} words.`;
-    }
-    if (phase.kind === "speech" && phase.subtype === "response") {
-        phaseInstruction =
-        "Respond directly to the commentary and address the main challenge fairly. The judges' grading criteria are (0-10): The participant developed a manageably small number of suggestions, questions, and critiques and constructively critiqued the presentation with focus on salient, important moral considerations and provided the presenting participant with novel options to modify their position.";
-    targetWords = `Length target: ${wordGuidance.min}-${wordGuidance.max} words. Aim near ${wordGuidance.preferredTarget} words. Hard cap: ${wordGuidance.max} words.`;
-    }
-    if (isJudgeAnswer) {
-        phaseInstruction = [
-            "Answer the judge's exact question as posed.",
-            "Your first sentence must directly answer that exact question.",
-            "If the question is yes/no, start with 'Yes' or 'No.'",
-            "If the question asks which principle, value, duty, or consideration matters most, name it explicitly in the first sentence.",
-            "Do not sidestep, broaden, or reframe the question before answering it.",
-            "The judges' grading criteria are (0-20): The participant answered the judge's question clearly, explicitly explained how the question impacts the participant's position in a way that made the participant's position clearer and refined the participant's position, or clearly explained why such refinement was not required."
-        ].join(" ");
-        targetWords = `Length target: ${wordGuidance.min}-${wordGuidance.max} words. Aim near ${wordGuidance.preferredTarget} words. Hard cap: ${wordGuidance.max} words.`;
-        return [
-            `Current phase: ${phase.title}`,
-            `Exact judge question:\n${judgeQuestion || "[Missing judge question]"}`,
-            phaseInstruction,
-            targetWords,
-            "Before finalizing internally, check the approximate word count and keep the answer inside the target range.",
-            `Current case title: ${caseData.title}`,
-            `Moderator question: ${caseData.question}`,
-            `Case text:\n${clipText(caseData.text, 6000)}`,
-            `Transcript so far for this case:\n${caseTranscript || "[No prior transcript for this case yet.]"}`,
-            "Stay tightly focused on the judge's exact wording.",
-            "Output plain text only."
-        ].filter(Boolean).join("\n\n");
-    }
-    return [
-        `Current case title: ${caseData.title}`,
-        `Moderator question: ${caseData.question}`,
-        `Case text:\n${clipText(caseData.text, 9000)}`,
-        `Transcript so far for this case:\n${caseTranscript || "[No prior transcript for this case yet.]"}`,
-        `Current phase: ${phase.title}`,
-        phaseInstruction,
-        targetWords,
-        "Output plain text only."
-    ].filter(Boolean).join("\n\n");
+    return AI_TURN_PROMPTS.buildAiTurnPrompt({
+        phase,
+        caseData,
+        transcript: transcriptAsPlainText(phase.caseNum),
+        judgeQuestion,
+        wordGuidance: getPhaseWordGuidance(phase)
+    });
 }
 
 function buildAiTurnRevisionPrompt(phase, draftText, revisionNumber, totalRevisions, baselineWordCount = 0) {
@@ -4514,7 +4194,7 @@ async function enforcePhaseWordCount(phase, draftText, options = {}) {
             ? buildAiExactWordBudgetPrompt(phase, bestDraft, currentWordCount, targetWordCount, attemptNumber)
             : [
                 `You are fixing the word count for ${phase.title}.`,
-                buildAiTurnPrompt(phase),
+                AI_TURN_PROMPTS.getPhaseInstruction(phase),
                 mode === "revision"
                 ? [
                     `Original first-draft word count: ${plan.originalDraftWordCount || plan.targetWordCount} words.`,
@@ -4533,7 +4213,7 @@ async function enforcePhaseWordCount(phase, draftText, options = {}) {
                 `Current draft:\n${clipText(bestDraft, 15000)}`,
                 "Output plain text only."
             ].join("\n\n");
-        const repaired = sanitizeText(await callOpenAI({
+        const repaired = sanitizeText(await callAI({
             model: getParticipantModel(phase.speaker),
                                                    systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                    userPrompt: prompt,
@@ -4559,6 +4239,7 @@ async function enforceDirectJudgeAnswer(phase, draftText) {
     const prompt = [
         `Current phase: ${phase.title}`,
         `Exact judge question:\n${judgeQuestion}`,
+        buildAiTurnPrompt(phase),
         `Draft answer:\n${draft}`,
         "Revise the draft so it answers the judge's exact question as posed.",
         "Requirements:",
@@ -4569,7 +4250,7 @@ async function enforceDirectJudgeAnswer(phase, draftText) {
         "- Keep the tone thoughtful, concise, and charitable.",
         "- Output plain text only."
     ].join("\n\n");
-    const revised = sanitizeText(await callOpenAI({
+    const revised = sanitizeText(await callAI({
         model: getParticipantModel(phase.speaker),
                                                   systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                   userPrompt: prompt,
@@ -4857,12 +4538,12 @@ async function maybePrepareAiFinalJudgeScorecard(judgeNumber, expectedRunId = st
             const scoringTranscript = scoringTranscriptAsPlainText();
             if (!sanitizeText(scoringTranscript)) throw new Error(l("No substantive transcript is available for final AI judging.", "Aucune transcription substantielle n’est disponible pour le jugement final IA."));
             const prompt = buildAiSingleJudgeScoringPrompt(judgeNumber, scoringTranscript);
-            const parsed = await callOpenAI({
+            const parsed = await callAI({
                 model: getJudgeModel(),
                                             systemPrompt: buildAiScoringSystemPrompt(judgeNumber),
                                             userPrompt: prompt,
                                             maxTokens: 3000,
-                                            reasoningEffort: "medium",
+                                            reasoningEffort: JUDGE_REASONING_EFFORT,
                                             jsonSchema: FINAL_JUDGE_SCORECARD_JSON_SCHEMA
             });
             const card = normalizeAiFinalJudgeScorecardResponse(parsed, judgeNumber);
@@ -4951,10 +4632,47 @@ function announceFinalResult(cards, sourceMode) {
     refreshControls();
 }
 
-function validateBeforeStart() {
-    if (!getApiKey()) {
-        openApiKeyDialog();
-        throw new Error(l("Choose or save an API key first.", "Choisissez ou enregistrez d’abord une clé API."));
+function collectSetupCredentialRequirements() {
+    const requirements = new Map();
+    const add = (provider, enReason, frReason) => {
+        if (!provider) return;
+        if (!requirements.has(provider)) requirements.set(provider, []);
+        requirements.get(provider).push(l(enReason, frReason));
+    };
+    const participantTwoModel = normalizeMatchModel(modelSelectEl?.value);
+    add(
+        getModelProvider(participantTwoModel),
+        `Participant 2 (${formatModelLabel(participantTwoModel, { includeProvider: false })})`,
+        `participant 2 (${formatModelLabel(participantTwoModel, { includeProvider: false })})`
+    );
+    if (normalizeParticipantMode(participantOneTypeSelectEl?.value) === "ai") {
+        const participantOneModel = normalizeMatchModel(participantOneModelSelectEl?.value);
+        add(
+            getModelProvider(participantOneModel),
+            `Participant 1 (${formatModelLabel(participantOneModel, { includeProvider: false })})`,
+            `participant 1 (${formatModelLabel(participantOneModel, { includeProvider: false })})`
+        );
+    }
+    if (judgeModeSelectEl?.value === "ai") {
+        add("openai", "AI judges", "les juges IA");
+    }
+    if (normalizeVoiceMode(voiceModeSelectEl?.value) === "openai") {
+        add("openai", "OpenAI read-aloud", "la lecture OpenAI");
+    }
+    return requirements;
+}
+
+async function validateBeforeStart() {
+    await refreshCredentialStatus({ force: true });
+    const requirements = collectSetupCredentialRequirements();
+    const missing = [...requirements.entries()].filter(([provider]) => !hasCredential(provider));
+    if (missing.length) {
+        openApiKeyDialog(missing[0][0]);
+        const details = missing.map(([provider, reasons]) => `${providerLabel(provider)}: ${reasons.join(", ")}`).join("; ");
+        throw new Error(l(
+            `Configure the required provider credentials before starting (${details}).`,
+            `Configurez les identifiants requis des fournisseurs avant de commencer (${details}).`
+        ));
     }
     const case1 = readCase(1);
     const case2 = readCase(2);
@@ -5149,8 +4867,8 @@ function startTrackSpeechRecognition() {
                 if (state.livePreviewMode !== "recognition") return;
                 if (ignorable.has(event.error)) return;
                 stopTrackSpeechRecognition();
-                startApiLivePreview();
-                setStatus(l("Recording... using OpenAI live preview.", "Enregistrement... utilisation de l’aperçu OpenAI en direct."));
+                state.livePreviewMode = "final-only";
+                setStatus(l("Recording... OpenAI will transcribe once when you stop.", "Enregistrement... OpenAI transcrira une seule fois à l’arrêt."));
             };
 
             recognition.onend = () => {
@@ -5160,8 +4878,8 @@ function startTrackSpeechRecognition() {
                     } catch (error) {
                         console.warn("SpeechRecognition restart failed:", error);
                         stopTrackSpeechRecognition();
-                        startApiLivePreview();
-                        setStatus(l("Recording... using OpenAI live preview.", "Enregistrement... utilisation de l’aperçu OpenAI en direct."));
+                        state.livePreviewMode = "final-only";
+                        setStatus(l("Recording... OpenAI will transcribe once when you stop.", "Enregistrement... OpenAI transcrira une seule fois à l’arrêt."));
                     }
                 } else if (state.recognition === recognition) {
                     state.recognition = null;
@@ -5179,96 +4897,18 @@ function startTrackSpeechRecognition() {
     }
 }
 
-function clearLivePreviewTimer() {
-    if (state.livePreviewTimer) {
-        clearInterval(state.livePreviewTimer);
-        state.livePreviewTimer = null;
-    }
-}
-
-function abortLivePreviewRequest() {
-    if (state.livePreviewAbortController) {
-        try { state.livePreviewAbortController.abort(); } catch {}
-        state.livePreviewAbortController = null;
-    }
-}
-
-async function requestApiLivePreview() {
-    if (state.livePreviewMode !== "api") return;
-    if (state.livePreviewInFlight) return;
-    const apiKey = getApiKey();
-    if (!apiKey) return;
-    if (!state.audioChunks.length) return;
-    const mime = state.mediaRecorder?.mimeType || "audio/webm";
-    const blob = new Blob(state.audioChunks, { type: mime });
-    if (!blob.size || blob.size < LIVE_PREVIEW_MIN_BLOB_BYTES) return;
-    const requestId = ++state.livePreviewRequestId;
-    const controller = new AbortController();
-    state.livePreviewInFlight = true;
-    state.livePreviewAbortController = controller;
-    try {
-        const formData = new FormData();
-        const extension = mime.includes("ogg") ? "ogg" : "webm";
-        formData.append("file", blob, `live-preview.${extension}`);
-        formData.append("model", "gpt-4o-mini-transcribe");
-        formData.append("language", isFrenchLocale() ? "fr" : "en");
-        const response = await fetch(OPENAI_TRANSCRIPTIONS_URL, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${apiKey}` },
-            body: formData,
-            signal: controller.signal
-        });
-        if (!response.ok) throw new Error(await parseApiError(response));
-        const data = await response.json();
-        if (requestId !== state.livePreviewRequestId) return;
-        if (state.livePreviewMode !== "api") return;
-        const previewText = normalizeSpeechText(data?.text || "");
-        if (!previewText) return;
-        const previousLiveText = getCurrentLiveSpeechText();
-        state.liveSpeechFinal = previewText;
-        state.liveSpeechInterim = "";
-        syncLiveSpeechToUi();
-        setStatus(l("Recording... transcribing live.", "Enregistrement... transcription en direct."));
-        const nextLiveText = getCurrentLiveSpeechText();
-        if (nextLiveText && nextLiveText !== previousLiveText) noteVoiceActivity(nextLiveText);
-    } catch (error) {
-        if (error?.name !== "AbortError") console.warn("Live preview transcription failed:", error);
-    } finally {
-        if (state.livePreviewAbortController === controller) state.livePreviewAbortController = null;
-        if (requestId === state.livePreviewRequestId) state.livePreviewInFlight = false;
-    }
-}
-
-function startApiLivePreview() {
-    stopTrackSpeechRecognition();
-    clearLivePreviewTimer();
-    abortLivePreviewRequest();
-    state.livePreviewMode = "api";
-    state.livePreviewInFlight = false;
-    state.livePreviewRequestId += 1;
-    state.livePreviewTimer = window.setInterval(() => { void requestApiLivePreview(); }, LIVE_PREVIEW_POLL_MS);
-}
-
-function stopApiLivePreview() {
-    clearLivePreviewTimer();
-    abortLivePreviewRequest();
-    state.livePreviewInFlight = false;
-    state.livePreviewRequestId += 1;
-}
-
 function startLivePreview() {
     stopLivePreview();
     state.liveSpeechFinal = "";
     state.liveSpeechInterim = "";
     if (startTrackSpeechRecognition()) return "recognition";
-    startApiLivePreview();
-    return "api";
+    state.livePreviewMode = "final-only";
+    return "final-only";
 }
 
 function stopLivePreview() {
     clearVoiceSilenceTimer();
     stopTrackSpeechRecognition();
-    stopApiLivePreview();
     state.livePreviewMode = "";
     if (state.recognition) state.recognition = null;
 }
@@ -5320,7 +4960,7 @@ function stopRecordingAndFinalize(reason = "manual", statusText = l("Stopping re
 }
 
 async function transcribeAudio(blob) {
-    const apiKey = getApiKey();
+    const requestId = ++state.finalTranscriptionRequestId;
     const liveFallback = getCurrentLiveSpeechText();
     let finalText = "";
     let statusText = "";
@@ -5338,34 +4978,33 @@ async function transcribeAudio(blob) {
             }
             return;
         }
-        if (!apiKey) {
-            openApiKeyDialog();
+        if (!hasCredential("openai")) {
+            openApiKeyDialog("openai");
             if (liveFallback) {
                 finalText = liveFallback;
                 statusText = getVoiceResultStatus({ usedLiveFallback: true, pendingSubmitReason: getPendingVoiceSubmissionReason() });
                 isError = true;
             } else {
                 restoreDraft = true;
-                statusText = l("Choose or save an API key first.", "Choisissez ou enregistrez d’abord une clé API.");
+                statusText = l("An OpenAI API key is required for speech-to-text.", "Une clé API OpenAI est requise pour la transcription vocale.");
                 isError = true;
             }
             return;
         }
         setBusy(true);
         setStatus(l("Finalizing transcript...", "Finalisation de la transcription..."));
-        const formData = new FormData();
         const mime = blob.type || "audio/webm";
         const extension = mime.includes("ogg") ? "ogg" : "webm";
-        formData.append("file", blob, `recording.${extension}`);
-        formData.append("model", "gpt-4o-mini-transcribe");
-        formData.append("language", isFrenchLocale() ? "fr" : "en");
-        const response = await fetch(OPENAI_TRANSCRIPTIONS_URL, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${apiKey}` },
-            body: formData
+        const bytes = await blobToByteArray(blob);
+        if (requestId !== state.finalTranscriptionRequestId) return;
+        const data = await getAudioBridge().transcribe({
+            bytes,
+            mimeType: mime,
+            fileName: `recording.${extension}`,
+            model: AUDIO_MODELS.finalTranscription,
+            language: isFrenchLocale() ? "fr" : "en"
         });
-        if (!response.ok) throw new Error(await parseApiError(response));
-        const data = await response.json();
+        if (requestId !== state.finalTranscriptionRequestId) return;
         finalText = normalizeSpeechText(data?.text || "") || liveFallback;
         if (!finalText) throw new Error(l("No speech was detected.", "Aucune parole n’a été détectée."));
         statusText = getVoiceResultStatus({ pendingSubmitReason: getPendingVoiceSubmissionReason() });
@@ -5422,9 +5061,9 @@ async function toggleRecording() {
         setStatus(l("Audio recording is not supported in this browser.", "L’enregistrement audio n’est pas pris en charge dans ce navigateur."), true);
         return;
     }
-    if (!getApiKey()) {
-        openApiKeyDialog();
-        setStatus(l("Choose or save an API key first.", "Choisissez ou enregistrez d’abord une clé API."), true);
+    if (!hasCredential("openai")) {
+        openApiKeyDialog("openai");
+        setStatus(l("An OpenAI API key is required for speech-to-text.", "Une clé API OpenAI est requise pour la transcription vocale."), true);
         return;
     }
     try {
@@ -5474,7 +5113,7 @@ async function toggleRecording() {
             if (previewMode === "recognition") {
                 setStatus(l("Recording... dictation will keep accumulating until you stop or submit.", "Enregistrement... la dictée s’accumule jusqu’à l’arrêt ou à la soumission."));
             } else {
-                setStatus(l("Recording... live text is coming from OpenAI and will keep accumulating until you stop or submit.", "Enregistrement... le texte en direct provient d’OpenAI et s’accumule jusqu’à l’arrêt ou à la soumission."));
+                setStatus(l("Recording... OpenAI will transcribe once when you stop or submit.", "Enregistrement... OpenAI transcrira une seule fois à l’arrêt ou à la soumission."));
             }
     } catch (error) {
         console.error("Microphone error:", error);
@@ -5491,6 +5130,7 @@ async function toggleRecording() {
 
 function resetStateForNewMatch() {
     state.matchRunId += 1;
+    state.finalTranscriptionRequestId += 1;
     cancelPendingVoiceAutoSend();
     stopSpeechPlayback(false, { resolveCallbacks: false });
     stopLivePreview();
@@ -5565,9 +5205,9 @@ function fullReset() {
     messageInputEl.value = "";
     hideLiveVoicePreview();
     setStatus(
-        getApiKey()
+        credentialState.loaded
         ? l("Ready.", "Prêt.")
-        : l("Choose or save an API key to begin.", "Choisissez ou enregistrez une clé API pour commencer.")
+        : l("Checking AI provider credentials...", "Vérification des identifiants des fournisseurs IA...")
     );
     refreshControls();
 }
@@ -5586,7 +5226,7 @@ function applyCaseOneChoice(decidingRole, choice) {
 
 async function startMatch() {
     try {
-        const { case1, case2 } = validateBeforeStart();
+        const { case1, case2 } = await validateBeforeStart();
         resetStateForNewMatch();
         const participantOneMode = normalizeParticipantMode(participantOneTypeSelectEl.value);
         state.participantTypes.human = participantOneMode;
@@ -5694,9 +5334,10 @@ function phaseAnnouncementText(phase) {
         const caseData = state.cases[phase.caseNum];
         const leader = speakerName(state.leadByCase[phase.caseNum]);
         const responder = speakerName(otherRole(state.leadByCase[phase.caseNum]));
+        const moderatorQuestion = SPEECH_PACING.ensureSentenceEnding(caseData.question, "?");
         return isFrenchLocale()
-        ? `Nous sommes maintenant prêtes à commencer le ${caseLabel(phase.caseNum)}. Le cas s’intitule « ${caseData.title} ». La question est : ${caseData.question} ${leader} mènera ce cas et ${responder} répondra.`
-        : `We are ready to begin Case #${phase.caseNum}. The case is "${caseData.title}". The question is: ${caseData.question} ${leader} will lead this case, and ${responder} will respond.`;
+        ? `Nous sommes maintenant prêtes à commencer le ${caseLabel(phase.caseNum)}. Le cas s’intitule « ${caseData.title} ». La question est : ${moderatorQuestion} ${leader} mènera ce cas et ${responder} répondra.`
+        : `We are ready to begin Case #${phase.caseNum}. The case is "${caseData.title}". The question is: ${moderatorQuestion} ${leader} will lead this case, and ${responder} will respond.`;
     }
     if (phase.kind === "confer") {
         const subtype = phase.subtype === "presentation" ? l("presentation", "présentation") : phase.subtype === "commentary" ? l("commentary", "commentaire") : l("response", "réplique");
@@ -5896,7 +5537,6 @@ function refreshControls() {
     renderMatchCaseReference();
     syncCoinTossUi();
     const phase = getCurrentPhase();
-    const hasApiKey = !!getApiKey();
     const composerActive = currentPhaseUsesMainComposer(phase);
     const humanTurn = currentPhaseRequiresHumanSubmission(phase);
     const judgeQuestionComposerActive = phase && state.phaseReady && isHumanJudgeQuestionPhase(phase);
@@ -5907,13 +5547,13 @@ function refreshControls() {
     [
         participantOneTypeSelectEl, participantOneModelSelectEl, humanNameInputEl, aiNameInputEl, coinCallSelectEl,
         judgeModeSelectEl, voiceModeSelectEl, modelSelectEl, case1TitleInputEl, case1QuestionInputEl, case1TextInputEl,
-        case1FileInputEl, case2TitleInputEl, case2QuestionInputEl, case2TextInputEl, case2FileInputEl
+        case2TitleInputEl, case2QuestionInputEl, case2TextInputEl
     ].forEach((el) => {
         if (!el) return;
         el.disabled = state.started || state.waitingForCoinChoice || locked;
     });
 
-    startMatchBtnEl.disabled = !hasApiKey || state.started || state.waitingForCoinChoice || locked;
+    startMatchBtnEl.disabled = !hasDesktopBridge() || !!credentialState.pendingProvider || state.started || state.waitingForCoinChoice || locked;
     resetMatchBtnEl.disabled = locked;
     if (newMatchBtnEl) newMatchBtnEl.disabled = locked;
 
@@ -5937,7 +5577,7 @@ function refreshControls() {
         : l("Submit Turn", "Soumettre le tour");
     }
 
-    micBtnEl.disabled = ((!composerActive || state.completed || !hasApiKey) && !state.isRecording) || ((state.busy || state.voiceFinalizePending) && !state.isRecording);
+    micBtnEl.disabled = ((!composerActive || state.completed) && !state.isRecording) || ((state.busy || state.voiceFinalizePending) && !state.isRecording);
     micBtnEl.textContent = state.isRecording ? l("■ Stop Recording", "■ Arrêter l’enregistrement") : l("● Record Voice", "● Enregistrer la voix");
     micBtnEl.classList.toggle("recording", state.isRecording);
 
@@ -6110,21 +5750,6 @@ function askHumanJudgeQuestion(judgeNumber) {
     advancePhase();
 }
 
-async function loadCaseFile(fileInput, textInput, titleInput) {
-    const file = fileInput.files?.[0];
-    if (!file) return;
-    try {
-        const text = await file.text();
-        textInput.value = text;
-        if (!sanitizeText(titleInput.value)) titleInput.value = file.name.replace(/\.[^.]+$/, "");
-        saveSetup();
-        setStatus(isFrenchLocale() ? `${file.name} chargé.` : `Loaded ${file.name}.`);
-    } catch (error) {
-        console.error(error);
-        setStatus(l("Could not read the uploaded file.", "Impossible de lire le fichier téléversé."), true);
-    }
-}
-
 function applyLocaleToUi() {
     activeLocale = normalizeLocale(state.locale || INITIAL_LOCALE);
     localStorage.setItem(STORAGE_KEYS.locale, activeLocale);
@@ -6234,9 +5859,6 @@ judgeInputs.forEach((judge) => {
     });
 });
 
-case1FileInputEl.addEventListener("change", () => { void loadCaseFile(case1FileInputEl, case1TextInputEl, case1TitleInputEl); });
-case2FileInputEl.addEventListener("change", () => { void loadCaseFile(case2FileInputEl, case2TextInputEl, case2TitleInputEl); });
-
 window.addEventListener("storage", () => {
     state.locale = normalizeLocale(
         new URLSearchParams(window.location.search).get("lang") ||
@@ -6263,6 +5885,15 @@ window.addEventListener("focus", () => {
     refreshParticipantScoreLabels();
     syncVoiceModeStateFromControls();
     refreshControls();
+    void refreshCredentialStatus({ force: true }).then(() => {
+        refreshControls();
+    }).catch((error) => {
+        const detail = safeBridgeErrorMessage(error);
+        setStatus(l(
+            `Could not refresh provider credentials${detail ? `: ${detail}` : "."}`,
+            `Impossible d’actualiser les identifiants des fournisseurs${detail ? ` : ${detail}` : "."}`
+        ), true);
+    });
 });
 
 window.addEventListener("pagehide", () => {
@@ -6275,6 +5906,31 @@ window.addEventListener("beforeunload", () => {
     releaseMicrophoneStream();
 });
 
+async function initializeCredentialState() {
+    if (!hasDesktopBridge()) {
+        credentialState.loaded = true;
+        credentialState.lastError = desktopLaunchMessage();
+        updateApiKeyUi();
+        setStatus(desktopLaunchMessage(), true);
+        refreshControls();
+        return;
+    }
+    try {
+        await migrateLegacyOpenAiCredential();
+        await refreshCredentialStatus({ force: true });
+        if (!state.started && !state.completed) setStatus(l("Ready.", "Prêt."));
+        refreshControls();
+        await maybeShowInitialApiKeyDialog();
+    } catch (error) {
+        const detail = safeBridgeErrorMessage(error);
+        setStatus(l(
+            `Could not load provider credentials${detail ? `: ${detail}` : "."}`,
+            `Impossible de charger les identifiants des fournisseurs${detail ? ` : ${detail}` : "."}`
+        ), true);
+        refreshControls();
+    }
+}
+
 loadSetup();
 initSiteLogo();
 ensureSpeechUi();
@@ -6283,4 +5939,4 @@ applyLocaleToUi();
 updateConfigBadges();
 updateApiKeyUi();
 refreshControls();
-maybeShowInitialApiKeyDialog();
+void initializeCredentialState();

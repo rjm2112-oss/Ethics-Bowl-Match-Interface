@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>Ethics Bowl Match Interface</title>
   <link rel="icon" type="image/png" href="assets/icon.png" />
   <link rel="stylesheet" href="styles.css" />
@@ -272,15 +273,6 @@
             </div>
 
             <div class="control-group">
-              <label for="case1FileInput">
-                <span data-i18n-en="Upload case text (.txt, .md, .text)" data-i18n-fr="Téléverser le texte du cas (.txt, .md, .text)">
-                  Upload case text (.txt, .md, .text)
-                </span>
-              </label>
-              <input id="case1FileInput" type="file" accept=".txt,.md,.text,text/plain,text/markdown" />
-            </div>
-
-            <div class="control-group">
               <label for="case1TextInput">
                 <span data-i18n-en="Case text" data-i18n-fr="Texte du cas">Case text</span>
               </label>
@@ -303,15 +295,6 @@
                 <span data-i18n-en="Moderator question" data-i18n-fr="Question du modérateur">Moderator question</span>
               </label>
               <input id="case2QuestionInput" type="text" />
-            </div>
-
-            <div class="control-group">
-              <label for="case2FileInput">
-                <span data-i18n-en="Upload case text (.txt, .md, .text)" data-i18n-fr="Téléverser le texte du cas (.txt, .md, .text)">
-                  Upload case text (.txt, .md, .text)
-                </span>
-              </label>
-              <input id="case2FileInput" type="file" accept=".txt,.md,.text,text/plain,text/markdown" />
             </div>
 
             <div class="control-group">
@@ -384,10 +367,10 @@
             <div class="progress-card">
               <div
                 class="panel-kicker"
-                data-i18n-en="Live match overview"
-                data-i18n-fr="Vue d’ensemble du match en direct"
+                data-i18n-en="Match overview"
+                data-i18n-fr="Vue d’ensemble du match"
               >
-                Live match overview
+                Match overview
               </div>
               <div id="matchSetupSummary" class="match-summary-grid"></div>
 
@@ -736,6 +719,9 @@
     </section>
   </div>
 
+  <script src="src/shared/model-catalog.js"></script>
+  <script src="src/shared/speech-pacing.js"></script>
+  <script src="src/shared/ai-turn-prompt.js"></script>
   <script>
     (function () {
       const script = document.createElement("script");
