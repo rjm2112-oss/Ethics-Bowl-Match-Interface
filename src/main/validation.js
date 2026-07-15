@@ -7,7 +7,6 @@ const REASONING_EFFORTS_BY_MODEL = Object.freeze({
     "gpt-5.6-sol": new Set(["none", "low", "medium", "high", "xhigh", "max"]),
     "gpt-5.6-terra": new Set(["none", "low", "medium", "high", "xhigh", "max"]),
     "gpt-5.6-luna": new Set(["none", "low", "medium", "high", "xhigh", "max"]),
-    "gpt-5.5": new Set(["none", "low", "medium", "high", "xhigh"]),
     "claude-fable-5": new Set(["low", "medium", "high", "xhigh", "max"]),
     "claude-sonnet-5": new Set(["low", "medium", "high", "xhigh", "max"])
 });
@@ -105,7 +104,7 @@ function validateSpeechRequest(payload) {
     const request = requireObject(payload);
     const model = boundedString(request.model || modelCatalog.AUDIO_MODELS.speech, "Speech model", { required: true, maxLength: 64 });
     if (!SPEECH_MODELS.has(model)) throw new Error("That speech model is not supported.");
-    const responseFormat = boundedString(request.responseFormat || request.format || "mp3", "Audio format", { required: true, maxLength: 16 }).toLowerCase();
+    const responseFormat = boundedString(request.responseFormat || "mp3", "Audio format", { required: true, maxLength: 16 }).toLowerCase();
     if (responseFormat !== "mp3") throw new Error("Only MP3 speech output is supported.");
     const voice = boundedString(request.voice || "alloy", "Voice", { required: true, maxLength: 32 }).toLowerCase();
     if (!/^[a-z][a-z0-9_-]*$/.test(voice)) throw new Error("The speech voice is not valid.");
@@ -150,7 +149,7 @@ function validateTranscriptionRequest(payload) {
     const request = requireObject(payload);
     const model = boundedString(request.model || modelCatalog.AUDIO_MODELS.finalTranscription, "Transcription model", { required: true, maxLength: 64 });
     if (!TRANSCRIPTION_MODELS.has(model)) throw new Error("That transcription model is not supported.");
-    const bytes = normalizeAudioBytes(request.bytes ?? request.audioBytes ?? request.arrayBuffer);
+    const bytes = normalizeAudioBytes(request.bytes);
     if (!bytes.byteLength) throw new Error("The audio recording is empty.");
     if (bytes.byteLength > MAX_AUDIO_BYTES) throw new Error("The audio recording is too large.");
     const mimeType = boundedString(request.mimeType || "audio/webm", "Audio type", { required: true, maxLength: 100 }).toLowerCase();

@@ -11,7 +11,6 @@ test("match catalog exposes only the approved debate models", () => {
             { id: "gpt-5.6-sol", provider: "openai" },
             { id: "gpt-5.6-terra", provider: "openai" },
             { id: "gpt-5.6-luna", provider: "openai" },
-            { id: "gpt-5.5", provider: "openai" },
             { id: "claude-fable-5", provider: "anthropic" },
             { id: "claude-sonnet-5", provider: "anthropic" }
         ]
@@ -31,9 +30,8 @@ test("audio defaults use supported OpenAI models", () => {
     });
 });
 
-test("provider lookup rejects unknown and legacy debate models", () => {
+test("provider lookup rejects models outside the debate catalog", () => {
     assert.equal(catalog.getProviderForModel("claude-sonnet-5"), "anthropic");
-    assert.equal(catalog.getProviderForModel("gpt-5.5"), "openai");
-    assert.equal(catalog.getProviderForModel("gpt-4o"), "");
-    assert.equal(catalog.isSupportedModel("gpt-5.4-mini"), false);
+    assert.equal(catalog.getProviderForModel("retired-debate-model"), "");
+    assert.equal(catalog.isSupportedModel("retired-debate-model"), false);
 });

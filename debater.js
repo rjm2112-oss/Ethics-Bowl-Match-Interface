@@ -1,23 +1,16 @@
 const STORAGE_KEYS = {
     instructions: "debate.instructions",
     setup: "ethics.match.setup",
-    locale: "ethics.match.locale",
-    apiKeys: "ethics.match.apiKeys",
-    activeApiKeyId: "ethics.match.activeApiKeyId"
+    locale: "ethics.match.locale"
 };
 
 const LOGO_CANDIDATES = Object.freeze([
     "ethics-bowl-logo.png",
-    "assets/icon.png",
-    "ethicsbowl-logo.png",
-    "ethics_bowl_logo.png",
-    "logo.png"
+    "assets/icon.png"
 ]);
 
 const MODEL_CATALOG = window.EthicsModelCatalog;
 if (!MODEL_CATALOG) throw new Error("The shared model catalog could not be loaded.");
-const SPEECH_PACING = window.EthicsSpeechPacing;
-if (!SPEECH_PACING) throw new Error("The shared speech pacing helpers could not be loaded.");
 const AI_TURN_PROMPTS = window.EthicsAiTurnPrompts;
 if (!AI_TURN_PROMPTS) throw new Error("The shared AI turn prompt helpers could not be loaded.");
 
@@ -196,9 +189,6 @@ const TIMINGS = Object.freeze({
 });
 
 const MAX_JUDGE_QUESTION_CHARS = 500;
-const VOICE_AUTO_SEND_DELAY_MS = 2000;
-const VOICE_SILENCE_STOP_DELAY_MS = 2000;
-const VOICE_SILENCE_SEND_DELAY_MS = 150;
 const CREDENTIAL_STATUS_TIMEOUT_MS = 4000;
 const MAX_TTS_CHARS = 2500;
 const SPEECH_CHUNK_MAX = 420;
@@ -211,22 +201,6 @@ const AUTO_SPEAK_VOICES = Object.freeze({
     judge2: "ash",
     judge3: "verse",
     judge: "alloy"
-});
-const BROWSER_VOICE_HINTS = Object.freeze({
-    moderator: ["aria", "samantha", "karen", "zira", "female"],
-    ai: ["ava", "victoria", "serena", "zira", "female"],
-    "ai-alt": ["brian", "thomas", "daniel", "guy", "male"],
-    judge1: ["jenny", "ava", "victoria", "serena", "female"],
-    judge2: ["brian", "alex", "thomas", "daniel", "male"],
-    judge3: ["ava", "zira", "samantha", "serena", "female"]
-});
-const BROWSER_VOICE_HINTS_FR_CA = Object.freeze({
-    moderator: ["amélie", "marie", "chantal", "sylvie", "female"],
-    ai: ["amélie", "marie", "sylvie", "female"],
-    "ai-alt": ["nicolas", "thomas", "mathieu", "male"],
-    judge1: ["amélie", "marie", "female"],
-    judge2: ["nicolas", "thomas", "male"],
-    judge3: ["sylvie", "marie", "female"]
 });
 const STOP_SPEECH_ERROR = "__speech_stopped__";
 
@@ -282,10 +256,6 @@ function phaseSubtypeLabel(subtype) {
 
 function normalizeParticipantMode(value) {
     return String(value || "").toLowerCase() === "ai" ? "ai" : "human";
-}
-
-function normalizeVoiceMode(value) {
-    return String(value || "").toLowerCase() === "browser" ? "browser" : "openai";
 }
 
 function localizedHref(path, locale = activeLocale) {
@@ -494,7 +464,6 @@ const state = {
         2: { title: "", question: "", text: "" }
     },
     judgeMode: "ai",
-    voiceMode: "openai",
     judgeQuestionCache: { 1: [], 2: [] },
     aiJudgeQuestionDraftCache: { 1: [], 2: [] },
     lastJudgeQuestionByCase: { 1: "", 2: "" },
@@ -519,20 +488,8 @@ const state = {
     mediaStream: null,
     audioChunks: [],
     isRecording: false,
-    recognition: null,
-    recognitionShouldRestart: false,
-    liveSpeechFinal: "",
-    liveSpeechInterim: "",
     draftBeforeRecording: "",
-    livePreviewMode: "",
     finalTranscriptionRequestId: 0,
-    voiceAutoSendTimer: null,
-    voiceAutoSendExpectedText: "",
-    voiceAutoSendArmed: false,
-    voiceSilenceTimer: null,
-    voiceSpeechDetected: false,
-    voiceAutoSubmitSuppressed: false,
-    voiceStopReason: "",
     voiceFinalizePending: false,
     pendingVoiceSubmission: null,
     speechQueue: [],
@@ -547,7 +504,6 @@ const state = {
     openAiSpeechLookaheadPrepared: null,
     openAiSpeechLookaheadEntry: null,
     speechPlaybackActive: false,
-    forceBrowserSpeech: false,
         speechProgressMessageIndex: -1,
         speechProgressNormalizedCursor: 0,
         speechProgressReadTo: 0,
@@ -572,12 +528,6 @@ function clipText(value, max = 15000) {
     return text.length > max ? `${text.slice(0, max)}\n\n[Text clipped for brevity.]` : text;
 }
 
-function clipInlineText(value, max = 160) {
-    const text = normalizeSpeechText(value);
-    if (!text) return "";
-    return text.length > max ? `${text.slice(0, max).trim()}…` : text;
-}
-
 function normalizeSpeechText(text) {
     return String(text || "").replace(/\s+/g, " ").trim();
 }
@@ -588,10 +538,6 @@ function combineDraftAndSpeech(draft, speech) {
     if (!left) return right;
     if (!right) return left;
     return `${left} ${right}`.trim();
-}
-
-function getCurrentLiveSpeechText() {
-    return normalizeSpeechText(`${state.liveSpeechFinal} ${state.liveSpeechInterim}`);
 }
 
 function ensureApiKeyUi() {
@@ -793,38 +739,6 @@ async function refreshCredentialStatus({ force = false } = {}) {
     credentialState.loadingPromise = trackedPromise;
     updateApiKeyUi();
     return trackedPromise;
-}
-
-async function migrateLegacyOpenAiCredential() {
-    const rawRecords = localStorage.getItem(STORAGE_KEYS.apiKeys);
-    if (rawRecords == null) {
-        localStorage.removeItem(STORAGE_KEYS.activeApiKeyId);
-        return;
-    }
-    let legacyKey = "";
-    let migrationComplete = false;
-    try {
-        const parsed = JSON.parse(rawRecords);
-        const records = Array.isArray(parsed) ? parsed : [];
-        const activeId = sanitizeText(localStorage.getItem(STORAGE_KEYS.activeApiKeyId) || "");
-        const activeRecord = activeId
-            ? records.find((item) => item && typeof item === "object" && sanitizeText(item.id) === activeId)
-            : null;
-        const readLegacyKey = (candidate) => sanitizeText(typeof candidate === "string" ? candidate : candidate?.key || "");
-        legacyKey = readLegacyKey(activeRecord) || records.map(readLegacyKey).find(Boolean) || "";
-        if (legacyKey) {
-            await getCredentialsBridge().save("openai", legacyKey);
-        }
-        migrationComplete = true;
-    } catch {
-        console.warn("Legacy OpenAI credential migration could not be completed.");
-    } finally {
-        legacyKey = "";
-        if (migrationComplete) {
-            localStorage.removeItem(STORAGE_KEYS.apiKeys);
-            localStorage.removeItem(STORAGE_KEYS.activeApiKeyId);
-        }
-    }
 }
 
 function safeBridgeErrorMessage(error) {
@@ -1039,7 +953,7 @@ function getMatchModel(modelId) {
 }
 
 function getModelProvider(modelId) {
-    return MODEL_CATALOG.getProviderForModel(normalizeMatchModel(modelId));
+    return MODEL_CATALOG.getProviderForModel(String(modelId || "").trim());
 }
 
 function formatModelLabel(modelId, { includeProvider = true } = {}) {
@@ -1069,25 +983,6 @@ function populateMatchModelSelect(selectEl, selectedValue = DEFAULT_PARTICIPANT_
 function populateAllMatchModelSelects() {
     populateMatchModelSelect(participantOneModelSelectEl, participantOneModelSelectEl?.value || DEFAULT_PARTICIPANT_MODEL);
     populateMatchModelSelect(modelSelectEl, modelSelectEl?.value || DEFAULT_PARTICIPANT_MODEL);
-}
-
-function updateVoiceDisclosure() {
-    const note = document.getElementById("voiceDisclosureNote");
-    if (!note) return;
-    note.textContent = "";
-}
-
-function syncVoiceModeStateFromControls() {
-    state.voiceMode = normalizeVoiceMode(voiceModeSelectEl?.value || state.voiceMode || "openai");
-    updateVoiceDisclosure();
-}
-
-function shouldUseOpenAiSpeechPlayback() {
-    return normalizeVoiceMode(state.voiceMode) === "openai" && hasCredential("openai") && !state.forceBrowserSpeech;
-}
-
-function shouldUseBrowserSpeechPlayback() {
-    return !shouldUseOpenAiSpeechPlayback();
 }
 
 function getStoredText(key) {
@@ -1198,13 +1093,23 @@ function getPhaseWordGuidance(phase) {
         };
     }
 
-    if (phase.kind === "speech" && (phase.subtype === "commentary" || phase.subtype === "response")) {
+    if (phase.kind === "speech" && phase.subtype === "commentary") {
         return {
             min: 368,
             max: 393,
             preferredTarget: 380,
             revisionTolerance: 100,
-            label: "368-390 words."
+            label: "368-393 words."
+        };
+    }
+
+    if (phase.kind === "speech" && phase.subtype === "response") {
+        return {
+            min: 373,
+            max: 398,
+            preferredTarget: 385,
+            revisionTolerance: 100,
+            label: "373-398 words."
         };
     }
 
@@ -1584,7 +1489,7 @@ function renderMatchSetupSummary() {
         },
         {
             label: l("Voice", "Voix"),
-            value: state.voiceMode === "browser" ? l("Browser", "Navigateur") : "OpenAI"
+            value: "OpenAI"
         },
         {
             label: l("Coin toss", "Tirage"),
@@ -1762,7 +1667,6 @@ function saveSetup() {
         aiName: aiNameInputEl.value,
         coinCall: coinCallSelectEl.value,
         judgeMode: judgeModeSelectEl.value,
-        voiceMode: normalizeVoiceMode(voiceModeSelectEl?.value),
         participantOneModel: normalizeMatchModel(participantOneModelSelectEl?.value),
         participantTwoModel: normalizeMatchModel(modelSelectEl?.value),
         case1Title: case1TitleInputEl.value,
@@ -1784,21 +1688,18 @@ function saveSetup() {
 }
 
 function loadSetup() {
-    if (voiceModeSelectEl) voiceModeSelectEl.value = "openai";
     if (participantOneTypeSelectEl) participantOneTypeSelectEl.value = "human";
     populateAllMatchModelSelects();
     try {
         const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.setup) || "{}");
         if (parsed && typeof parsed === "object") {
-            const legacyModel = normalizeMatchModel(parsed.model || DEFAULT_PARTICIPANT_MODEL);
             if (typeof parsed.participantOneType === "string") participantOneTypeSelectEl.value = normalizeParticipantMode(parsed.participantOneType);
             if (typeof parsed.humanName === "string") humanNameInputEl.value = parsed.humanName;
             if (typeof parsed.aiName === "string") aiNameInputEl.value = parsed.aiName;
             if (typeof parsed.coinCall === "string") coinCallSelectEl.value = parsed.coinCall;
             if (typeof parsed.judgeMode === "string") judgeModeSelectEl.value = parsed.judgeMode;
-            if (typeof parsed.voiceMode === "string" && voiceModeSelectEl) voiceModeSelectEl.value = normalizeVoiceMode(parsed.voiceMode);
-            participantOneModelSelectEl.value = normalizeMatchModel(parsed.participantOneModel || legacyModel);
-            modelSelectEl.value = normalizeMatchModel(parsed.participantTwoModel || legacyModel);
+            participantOneModelSelectEl.value = normalizeMatchModel(parsed.participantOneModel || DEFAULT_PARTICIPANT_MODEL);
+            modelSelectEl.value = normalizeMatchModel(parsed.participantTwoModel || DEFAULT_PARTICIPANT_MODEL);
             if (typeof parsed.case1Title === "string") case1TitleInputEl.value = parsed.case1Title;
             if (typeof parsed.case1Question === "string") case1QuestionInputEl.value = parsed.case1Question;
             if (typeof parsed.case1Text === "string") case1TextInputEl.value = parsed.case1Text;
@@ -1819,7 +1720,6 @@ function loadSetup() {
         }
     } catch {}
     syncParticipantSetupUi();
-    syncVoiceModeStateFromControls();
     refreshParticipantScoreLabels();
 }
 
@@ -2125,22 +2025,10 @@ function ensureSpeechAudioEl() {
     return audioEl;
 }
 
-function injectVoiceDisclosure() {
-    let note = document.getElementById("voiceDisclosureNote");
-    if (!note) {
-        note = document.createElement("div");
-        note.id = "voiceDisclosureNote";
-        note.className = "small-note";
-        statusLineEl.insertAdjacentElement("afterend", note);
-    }
-    updateVoiceDisclosure();
-}
-
 function isSpeechPlaybackActive() {
     const audioEl = state.speechAudioEl;
-    const browserSpeaking = "speechSynthesis" in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending);
     const audioPlaying = !!(audioEl && audioEl.src && typeof audioEl.paused === "boolean" && !audioEl.paused);
-    return state.speechProcessing || state.speechPlaybackActive || !!state.speechQueue.length || !!state.currentSpeechController || !!state.openAiSpeechLookaheadPromise || !!state.openAiSpeechLookaheadPrepared || browserSpeaking || audioPlaying;
+    return state.speechProcessing || state.speechPlaybackActive || !!state.speechQueue.length || !!state.currentSpeechController || !!state.openAiSpeechLookaheadPromise || !!state.openAiSpeechLookaheadPrepared || audioPlaying;
 }
 
 function refreshSpeechUi() {
@@ -2151,7 +2039,6 @@ function refreshSpeechUi() {
 
 function ensureSpeechUi() {
     ensureSpeechAudioEl();
-    injectVoiceDisclosure();
     ensureComposerModeIndicatorUi();
     if (!stopSpeechBtnEl) {
         stopSpeechBtnEl = document.getElementById("stopSpeechBtn");
@@ -2193,8 +2080,7 @@ function resetSpeechAudioEl() {
     try { audioEl.load(); } catch {}
 }
 
-function clearOpenAiSpeechLookahead(restoreEntry = false) {
-    const queuedEntry = restoreEntry ? state.openAiSpeechLookaheadEntry : null;
+function clearOpenAiSpeechLookahead() {
     if (state.currentSpeechController && state.currentSpeechControllerKind === "lookahead") {
         try { state.currentSpeechController.abort(); } catch {}
     }
@@ -2202,7 +2088,6 @@ function clearOpenAiSpeechLookahead(restoreEntry = false) {
     if (preparedUrl) {
         try { URL.revokeObjectURL(preparedUrl); } catch {}
     }
-    if (queuedEntry) state.speechQueue.unshift(queuedEntry);
     state.openAiSpeechLookaheadPromise = null;
     state.openAiSpeechLookaheadPrepared = null;
     state.openAiSpeechLookaheadEntry = null;
@@ -2214,18 +2099,14 @@ function stopSpeechPlayback(showMessage = false, { resolveCallbacks = true } = {
     state.speechToken += 1;
     state.speechQueue = [];
     state.speechProcessing = false;
-    clearOpenAiSpeechLookahead(false);
+    clearOpenAiSpeechLookahead();
     state.speechPlaybackActive = false;
-    state.forceBrowserSpeech = false;
     rejectCurrentSpeechPlayback();
     if (state.currentSpeechController) {
         try { state.currentSpeechController.abort(); } catch {}
         state.currentSpeechController = null;
     }
     state.currentSpeechControllerKind = "";
-    if ("speechSynthesis" in window) {
-        try { window.speechSynthesis.cancel(); } catch {}
-    }
     resetSpeechAudioEl();
     resetSpeechProgressState({ clearUi: true });
     if (resolveCallbacks) finalizeAllSpeechPlaybackCallbacks();
@@ -2285,11 +2166,10 @@ function chunkTextForSpeech(text, maxLen = SPEECH_CHUNK_MAX) {
     return chunks;
 }
 
-function chunkModeratorTextForSpeech(text, maxLen = SPEECH_CHUNK_MAX) {
-    return SPEECH_PACING.buildModeratorSpeechChunks(text, {
-        maxLength: maxLen,
-        locale: isFrenchLocale() ? "fr-CA" : "en-US"
-    });
+function ensureSentenceEnding(text, ending = ".") {
+    const normalized = normalizeSpeechText(text);
+    if (!normalized || /[.!?…]["')\]]*$/u.test(normalized)) return normalized;
+    return `${normalized}${String(ending || ".").charAt(0) || "."}`;
 }
 
 function getAudioBridge() {
@@ -2317,36 +2197,6 @@ function createLocalAbortError() {
     return error;
 }
 
-function pickBrowserVoice(voiceKey) {
-    if (!("speechSynthesis" in window) || typeof window.speechSynthesis.getVoices !== "function") return null;
-    const allVoices = window.speechSynthesis.getVoices();
-    if (!allVoices.length) return null;
-    const localizedVoices = isFrenchLocale()
-    ? allVoices.filter((voice) => /^fr(-|_)?ca$/i.test(voice.lang || "") || /^fr/i.test(voice.lang || ""))
-    : allVoices.filter((voice) => /^en/i.test(voice.lang || ""));
-    const voices = localizedVoices.length ? localizedVoices : allVoices;
-    const hintMap = isFrenchLocale() ? BROWSER_VOICE_HINTS_FR_CA : BROWSER_VOICE_HINTS;
-    const hints = hintMap[voiceKey] || [];
-    for (const hint of hints) {
-        const match = voices.find((voice) => String(voice.name || "").toLowerCase().includes(String(hint).toLowerCase()));
-        if (match) return match;
-    }
-    const fallbackIndexByKey = { moderator: 0, ai: 1, "ai-alt": 2, judge1: 3, judge2: 4, judge3: 5 };
-    const index = fallbackIndexByKey[voiceKey] ?? 0;
-    return voices[index % voices.length] || voices[0] || null;
-}
-
-function getBrowserSpeechSettings(entry) {
-    const voiceKey = String(entry?.voiceKey || entry?.kind || "");
-    if (voiceKey === "moderator") return { rate: 0.98, pitch: 0.94 };
-    if (voiceKey === "ai") return { rate: 1.01, pitch: 1.08 };
-    if (voiceKey === "ai-alt") return { rate: 0.98, pitch: 0.9 };
-    if (voiceKey === "judge1") return { rate: 1.01, pitch: 0.96 };
-    if (voiceKey === "judge2") return { rate: 0.99, pitch: 1.06 };
-    if (voiceKey === "judge3") return { rate: 1.03, pitch: 1.12 };
-    return { rate: 1, pitch: 1 };
-}
-
 async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct" } = {}) {
     if (!hasCredential("openai")) throw new Error(l("An OpenAI credential is required for OpenAI read-aloud.", "Un identifiant OpenAI est requis pour la lecture OpenAI."));
     if (token !== state.speechToken) return null;
@@ -2359,7 +2209,7 @@ async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct" 
             model: AUDIO_MODELS.speech,
             voice: AUTO_SPEAK_VOICES[entry.voiceKey] || AUTO_SPEAK_VOICES[entry.kind] || "alloy",
             input: entry.text.slice(0, MAX_TTS_CHARS),
-            format: "mp3"
+            responseFormat: "mp3"
         });
         if (controller.signal.aborted) throw createLocalAbortError();
         if (token !== state.speechToken) return null;
@@ -2409,49 +2259,7 @@ async function playPreparedOpenAiSpeechChunk(prepared, token) {
     }
 }
 
-async function playBrowserSpeechChunk(entry, token) {
-    if (!("speechSynthesis" in window)) throw new Error("Browser speech playback is unavailable.");
-    if (token !== state.speechToken) return;
-    state.speechPlaybackActive = true;
-    refreshSpeechUi();
-    queueSpeechFollowScroll(true);
-    try {
-        await new Promise((resolve, reject) => {
-            const utterance = new SpeechSynthesisUtterance(entry.text);
-            const settings = getBrowserSpeechSettings(entry);
-            const voice = pickBrowserVoice(entry.voiceKey || entry.kind);
-            utterance.rate = settings.rate;
-            utterance.pitch = settings.pitch;
-            utterance.lang = isFrenchLocale() ? "fr-CA" : "en-US";
-            if (voice) utterance.voice = voice;
-            const rejectRef = (error) => {
-                if (state.currentSpeechReject === rejectRef) state.currentSpeechReject = null;
-                reject(error);
-            };
-            const resolveRef = () => {
-                if (state.currentSpeechReject === rejectRef) state.currentSpeechReject = null;
-                resolve();
-            };
-            state.currentSpeechReject = rejectRef;
-            utterance.onend = resolveRef;
-            utterance.onerror = (event) => rejectRef(new Error(event?.error || "Browser voice playback failed."));
-            try { window.speechSynthesis.speak(utterance); } catch (error) { rejectRef(error); }
-        });
-    } finally {
-        state.speechPlaybackActive = false;
-        refreshSpeechUi();
-    }
-}
-
-async function waitForSpeechEntryPause(entry, token) {
-    const pauseAfterMs = Math.max(0, Math.min(2000, Number(entry?.pauseAfterMs) || 0));
-    if (!pauseAfterMs || token !== state.speechToken) return;
-    await new Promise((resolve) => window.setTimeout(resolve, pauseAfterMs));
-    if (token !== state.speechToken) throw createLocalAbortError();
-}
-
 function kickOpenAiSpeechLookahead(token) {
-    if (!shouldUseOpenAiSpeechPlayback()) return;
     if (token !== state.speechToken) return;
     if (state.openAiSpeechLookaheadPromise || state.openAiSpeechLookaheadPrepared) return;
     const nextEntry = state.speechQueue.shift();
@@ -2523,30 +2331,15 @@ async function getNextOpenAiSpeechPrepared(token) {
     }
 }
 
-async function handleOpenAiSpeechFailure(error, token, fallbackEntry = null, restoreLookahead = false) {
-    if (token !== state.speechToken) return false;
-    console.warn("OpenAI speech failed, falling back to browser speech:", error);
-    if (restoreLookahead) clearOpenAiSpeechLookahead(true);
-    else clearOpenAiSpeechLookahead(false);
-    resetSpeechAudioEl();
-    state.forceBrowserSpeech = true;
-    refreshSpeechUi();
-    const entry = fallbackEntry || error?.speechEntry || null;
-    if (!entry?.text) {
-        setStatus(l("OpenAI voice failed. Falling back to browser voice.", "La voix OpenAI a échoué. Retour à la voix du navigateur."), true);
-        return true;
-    }
-    beginSpeechProgressForQueueEntry(entry);
-    try {
-        await playBrowserSpeechChunk(entry, token);
-        await waitForSpeechEntryPause(entry, token);
-        setStatus(l("OpenAI voice failed. Falling back to browser voice.", "La voix OpenAI a échoué. Retour à la voix du navigateur."), true);
-        return true;
-    } catch (browserError) {
-        console.error("Browser speech failed:", browserError);
-        setStatus(browserError?.message || l("Read-aloud failed.", "La lecture a échoué."), true);
-        return false;
-    }
+function handleOpenAiSpeechFailure(error, token) {
+    if (token !== state.speechToken) return;
+    console.error("OpenAI read-aloud failed:", error);
+    const detail = safeBridgeErrorMessage(error);
+    stopSpeechPlayback(false);
+    setStatus(
+        detail || l("OpenAI read-aloud failed.", "La lecture OpenAI a échoué."),
+        true
+    );
 }
 
 async function processSpeechQueue(token = state.speechToken) {
@@ -2555,38 +2348,12 @@ async function processSpeechQueue(token = state.speechToken) {
     refreshSpeechUi();
     try {
         while (token === state.speechToken) {
-            const useBrowserVoice = shouldUseBrowserSpeechPlayback();
-            if (useBrowserVoice) {
-                const entry = state.speechQueue.shift();
-                if (!entry) break;
-                beginSpeechProgressForQueueEntry(entry);
-                try {
-                    await playBrowserSpeechChunk(entry, token);
-                    await waitForSpeechEntryPause(entry, token);
-                    markSpeechChunkComplete(entry.transcriptIndex);
-                } catch (error) {
-                    if (token !== state.speechToken || error?.name === "AbortError" || error?.message === STOP_SPEECH_ERROR) break;
-                    console.error("Speech playback failed:", error);
-                    finalizeSpeechPlaybackForMessage(entry.transcriptIndex);
-                    setStatus(error?.message || l("Read-aloud failed.", "La lecture a échoué."), true);
-                    break;
-                } finally {
-                    resetSpeechAudioEl();
-                    refreshSpeechUi();
-                }
-                continue;
-            }
             let prepared = null;
             try {
                 prepared = await getNextOpenAiSpeechPrepared(token);
             } catch (error) {
-                const failedEntry = error?.speechEntry || null;
-                const recovered = await handleOpenAiSpeechFailure(error, token, failedEntry, false);
-                if (recovered) {
-                    if (failedEntry) markSpeechChunkComplete(failedEntry.transcriptIndex);
-                    continue;
-                }
-                if (failedEntry) finalizeSpeechPlaybackForMessage(failedEntry.transcriptIndex);
+                if (token !== state.speechToken || error?.name === "AbortError" || error?.message === STOP_SPEECH_ERROR) break;
+                handleOpenAiSpeechFailure(error, token);
                 break;
             }
             if (!prepared) break;
@@ -2594,16 +2361,10 @@ async function processSpeechQueue(token = state.speechToken) {
             kickOpenAiSpeechLookahead(token);
             try {
                 await playPreparedOpenAiSpeechChunk(prepared, token);
-                await waitForSpeechEntryPause(prepared.entry, token);
                 markSpeechChunkComplete(prepared.entry.transcriptIndex);
             } catch (error) {
                 if (token !== state.speechToken || error?.name === "AbortError" || error?.message === STOP_SPEECH_ERROR) break;
-                const recovered = await handleOpenAiSpeechFailure(error, token, prepared.entry, true);
-                if (recovered) {
-                    markSpeechChunkComplete(prepared.entry.transcriptIndex);
-                    continue;
-                }
-                finalizeSpeechPlaybackForMessage(prepared.entry.transcriptIndex);
+                handleOpenAiSpeechFailure(error, token);
                 break;
             } finally {
                 resetSpeechAudioEl();
@@ -2623,16 +2384,12 @@ function enqueueTranscriptSpeech(kind, text, transcriptIndex = -1, voiceKey = ""
     if (!AUTO_SPEAK_MESSAGE_KINDS.has(kind)) return;
     const normalized = normalizeSpeechText(text);
     if (!normalized) return;
-    const speechChunks = kind === "moderator"
-        ? chunkModeratorTextForSpeech(text, SPEECH_CHUNK_MAX)
-        : chunkTextForSpeech(normalized, SPEECH_CHUNK_MAX).map((chunk) => ({ text: chunk, pauseAfterMs: 0 }));
-    const chunks = speechChunks
-    .map((chunk) => ({
+    const chunks = chunkTextForSpeech(normalized, SPEECH_CHUNK_MAX)
+    .map((textChunk) => ({
         kind,
         voiceKey: voiceKey || kind,
-        text: chunk.text.slice(0, MAX_TTS_CHARS),
-        pauseAfterMs: chunk.pauseAfterMs,
-                     transcriptIndex
+        text: textChunk.slice(0, MAX_TTS_CHARS),
+        transcriptIndex
     }))
     .filter((entry) => entry.text);
     if (!chunks.length) {
@@ -2642,7 +2399,7 @@ function enqueueTranscriptSpeech(kind, text, transcriptIndex = -1, voiceKey = ""
     trackSpeechChunksForMessage(transcriptIndex, chunks.length);
     ensureSpeechUi();
     state.speechQueue.push(...chunks);
-    if (state.speechPlaybackActive && shouldUseOpenAiSpeechPlayback() && !state.openAiSpeechLookaheadPromise && !state.openAiSpeechLookaheadPrepared) {
+    if (state.speechPlaybackActive && !state.openAiSpeechLookaheadPromise && !state.openAiSpeechLookaheadPrepared) {
         kickOpenAiSpeechLookahead(state.speechToken);
     }
     refreshSpeechUi();
@@ -3057,7 +2814,7 @@ function updatePhaseHeader() {
     }
     if (!state.started && !state.completed) {
         currentPhaseTitleEl.textContent = l("Setup", "Configuration");
-        currentPhaseMetaEl.textContent = l("Upload two cases and start the match.", "Téléversez deux cas et démarrez le match.");
+        currentPhaseMetaEl.textContent = l("Enter two cases and start the match.", "Saisissez deux cas et démarrez le match.");
         return;
     }
     if (state.completed) {
@@ -3359,7 +3116,7 @@ function handleTimedPhaseExpiration(expiredPhase) {
         setPendingVoiceSubmission("timeout", expiredPhase.id);
         if (state.isRecording) {
             setStatus(l("Time is up. Finalizing the recorded text and submitting it.", "Le temps est écoulé. Finalisation du texte enregistré et soumission."));
-            if (!stopRecordingAndFinalize("timeout", l("Time is up. Finalizing the recorded text and submitting it.", "Le temps est écoulé. Finalisation du texte enregistré et soumission."))) {
+            if (!stopRecordingAndFinalize(l("Time is up. Finalizing the recorded text and submitting it.", "Le temps est écoulé. Finalisation du texte enregistré et soumission."))) {
                 resolvePendingVoiceSubmission();
             }
             return;
@@ -3582,7 +3339,7 @@ async function callAI({
     reasoningEffort = STUDENT_REASONING_EFFORT,
     jsonSchema = null
 }) {
-    const resolvedModel = normalizeMatchModel(model || DEFAULT_JUDGE_MODEL);
+    const resolvedModel = String(model || DEFAULT_JUDGE_MODEL).trim();
     const provider = getModelProvider(resolvedModel);
     if (!provider) throw new Error(l("The selected debate model is not supported.", "Le modèle de débat sélectionné n’est pas pris en charge."));
     await requireProviderCredential(provider, formatModelLabel(resolvedModel, { includeProvider: false }));
@@ -4503,19 +4260,9 @@ function buildAiSingleJudgeScoringPrompt(judgeNumber, scoringTranscript) {
 }
 
 function normalizeAiFinalJudgeScorecardResponse(rawJudge, judgeNumber) {
-    const normalizedInput = typeof rawJudge === "string" ? extractJsonObject(rawJudge) : rawJudge;
-    const source = (normalizedInput && typeof normalizedInput === "object" && normalizedInput.scorecard && typeof normalizedInput.scorecard === "object")
-    ? normalizedInput.scorecard
-    : (normalizedInput && typeof normalizedInput === "object" && normalizedInput.judge && typeof normalizedInput.judge === "object")
-    ? normalizedInput.judge
-    : Array.isArray(normalizedInput?.judges)
-    ? normalizedInput.judges[0]
-    : Array.isArray(normalizedInput)
-    ? normalizedInput[0]
-    : normalizedInput;
-
-    const participantOneBreakdown = normalizeOfficialParticipantBreakdown(source?.participantOne || source?.human);
-    const participantTwoBreakdown = normalizeOfficialParticipantBreakdown(source?.participantTwo || source?.ai);
+    const source = rawJudge && typeof rawJudge === "object" && !Array.isArray(rawJudge) ? rawJudge : null;
+    const participantOneBreakdown = normalizeOfficialParticipantBreakdown(source?.participantOne);
+    const participantTwoBreakdown = normalizeOfficialParticipantBreakdown(source?.participantTwo);
     if (!participantOneBreakdown || !participantTwoBreakdown) throw new Error(l("AI judge did not return the full official score-sheet breakdown.", "Le juge IA n’a pas renvoyé le détail complet de la fiche officielle."));
     return {
         name: sanitizeText(source?.name) || judgeLabel(judgeNumber),
@@ -4656,9 +4403,7 @@ function collectSetupCredentialRequirements() {
     if (judgeModeSelectEl?.value === "ai") {
         add("openai", "AI judges", "les juges IA");
     }
-    if (normalizeVoiceMode(voiceModeSelectEl?.value) === "openai") {
-        add("openai", "OpenAI read-aloud", "la lecture OpenAI");
-    }
+    add("openai", "OpenAI read-aloud", "la lecture OpenAI");
     return requirements;
 }
 
@@ -4700,115 +4445,35 @@ function hideLiveVoicePreview() {
     liveVoicePreviewEl.scrollTop = 0;
 }
 
-function syncLiveSpeechToUi() {
-    const liveText = getCurrentLiveSpeechText();
-    showLiveVoicePreview(liveText || l("Listening...", "Écoute..."));
-    messageInputEl.value = combineDraftAndSpeech(state.draftBeforeRecording, liveText);
-    syncActiveJudgeDraftFromMainComposer();
-}
-
 function resetLiveSpeechState() {
-    state.liveSpeechFinal = "";
-    state.liveSpeechInterim = "";
     state.draftBeforeRecording = "";
     hideLiveVoicePreview();
 }
 
-function clearVoiceAutoSendTimer() {
-    if (state.voiceAutoSendTimer) {
-        clearTimeout(state.voiceAutoSendTimer);
-        state.voiceAutoSendTimer = null;
-    }
-}
-
-function cancelPendingVoiceAutoSend() {
-    clearVoiceAutoSendTimer();
-    state.voiceAutoSendArmed = false;
-    state.voiceAutoSendExpectedText = "";
-}
-
-function armVoiceAutoSendTimer(delayMs = VOICE_AUTO_SEND_DELAY_MS) {
-    clearVoiceAutoSendTimer();
-    state.voiceAutoSendTimer = window.setTimeout(attemptVoiceAutoSend, Math.max(0, delayMs));
-}
-
-function scheduleVoiceAutoSend() {
-    cancelPendingVoiceAutoSend();
-}
-
-function attemptVoiceAutoSend() {
-    cancelPendingVoiceAutoSend();
-}
-
-function clearVoiceSilenceTimer() {
-    if (state.voiceSilenceTimer) {
-        clearTimeout(state.voiceSilenceTimer);
-        state.voiceSilenceTimer = null;
-    }
-}
-
 function resetVoiceCaptureState() {
-    clearVoiceSilenceTimer();
-    state.voiceSpeechDetected = false;
-    state.voiceAutoSubmitSuppressed = false;
-    state.voiceStopReason = "";
     state.voiceFinalizePending = false;
-}
-
-function noteVoiceActivity(text) {
-    if (!state.isRecording) return;
-    const normalized = normalizeSpeechText(text);
-    if (!normalized) return;
-    state.voiceSpeechDetected = true;
-    clearVoiceSilenceTimer();
 }
 
 function getVoiceComposerPhaseContext() {
     return getPhaseById(state.pendingVoiceSubmission?.phaseId || "") || getCurrentPhase();
 }
 
-function getVoiceResultStatus({ usedLiveFallback = false, transcriptionFailed = false, pendingSubmitReason = "" } = {}) {
+function getVoiceResultStatus({ pendingSubmitReason = "" } = {}) {
     const phase = getVoiceComposerPhaseContext();
     const isJudgeQuestion = isHumanJudgeQuestionPhase(phase);
     const reviewPhrase = isJudgeQuestion
     ? l("Review it and press Ask when ready.", "Relisez et cliquez sur Poser la question quand vous êtes prête.")
     : l("Review it and press Send when ready.", "Relisez et cliquez sur Soumettre quand vous êtes prête.");
     if (pendingSubmitReason === "timeout") {
-        if (transcriptionFailed && usedLiveFallback) {
-            return isJudgeQuestion
-            ? l("Time is up. OpenAI transcription failed, so the live transcript was kept and the question will be asked.", "Le temps est écoulé. La transcription OpenAI a échoué, donc le texte en direct a été conservé et la question sera posée.")
-            : l("Time is up. OpenAI transcription failed, so the live transcript was kept and will be submitted.", "Le temps est écoulé. La transcription OpenAI a échoué, donc le texte en direct a été conservé et sera soumis.");
-        }
-        if (usedLiveFallback) {
-            return isJudgeQuestion
-            ? l("Time is up. Using the live transcript and asking the question.", "Le temps est écoulé. Utilisation du texte en direct et envoi de la question.")
-            : l("Time is up. Using the live transcript and submitting it.", "Le temps est écoulé. Utilisation du texte en direct et soumission.");
-        }
         return isJudgeQuestion
         ? l("Time is up. Finalizing the transcript and asking the question.", "Le temps est écoulé. Finalisation de la transcription et envoi de la question.")
         : l("Time is up. Finalizing the transcript and submitting it.", "Le temps est écoulé. Finalisation de la transcription et soumission.");
     }
     if (pendingSubmitReason === "manual") {
-        if (transcriptionFailed && usedLiveFallback) {
-            return isJudgeQuestion
-            ? l("OpenAI transcription failed, so the live transcript was kept. Asking the question now.", "La transcription OpenAI a échoué, donc le texte en direct a été conservé. Envoi de la question maintenant.")
-            : l("OpenAI transcription failed, so the live transcript was kept. Submitting now.", "La transcription OpenAI a échoué, donc le texte en direct a été conservé. Soumission en cours.");
-        }
-        if (usedLiveFallback) {
-            return isJudgeQuestion
-            ? l("Using the live transcript. Asking the question now.", "Utilisation du texte en direct. Envoi de la question maintenant.")
-            : l("Using the live transcript. Submitting now.", "Utilisation du texte en direct. Soumission en cours.");
-        }
         return isJudgeQuestion
         ? l("Finalizing the transcript and asking the question now.", "Finalisation de la transcription et envoi de la question.")
         : l("Finalizing the transcript and submitting now.", "Finalisation de la transcription et soumission.");
     }
-    if (transcriptionFailed && usedLiveFallback) {
-        return isFrenchLocale()
-        ? `La transcription OpenAI a échoué, donc le texte en direct a été conservé. ${reviewPhrase}`
-        : `OpenAI transcription failed, so the live transcript was kept. ${reviewPhrase}`;
-    }
-    if (usedLiveFallback) return isFrenchLocale() ? `Texte en direct utilisé. ${reviewPhrase}` : `Used the live transcript. ${reviewPhrase}`;
     return isFrenchLocale() ? `Texte vocal inséré. ${reviewPhrase}` : `Voice text inserted. ${reviewPhrase}`;
 }
 
@@ -4820,99 +4485,6 @@ function applyVoiceInputResult(voiceText, statusText, options = {}) {
     setStatus(statusText, isError);
 }
 
-function getSpeechRecognitionCtor() {
-    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
-}
-
-function stopTrackSpeechRecognition() {
-    state.recognitionShouldRestart = false;
-    if (!state.recognition) return;
-    try { state.recognition.stop(); } catch {}
-}
-
-function startTrackSpeechRecognition() {
-    const SpeechRecognitionCtor = getSpeechRecognitionCtor();
-    if (!SpeechRecognitionCtor) return false;
-    try {
-        const recognition = new SpeechRecognitionCtor();
-        state.recognition = recognition;
-        state.recognitionShouldRestart = true;
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = isFrenchLocale() ? "fr-CA" : (document.documentElement.lang || navigator.language || "en-US");
-        recognition.maxAlternatives = 1;
-
-        recognition.onresult = (event) => {
-            if (state.livePreviewMode !== "recognition") return;
-            const previousLiveText = getCurrentLiveSpeechText();
-            let interim = "";
-            for (let i = event.resultIndex; i < event.results.length; i += 1) {
-                const transcript = event.results[i]?.[0]?.transcript || "";
-                if (event.results[i].isFinal) {
-                    state.liveSpeechFinal = normalizeSpeechText(`${state.liveSpeechFinal} ${transcript}`);
-                } else {
-                    interim += ` ${transcript}`;
-                }
-            }
-            state.liveSpeechInterim = normalizeSpeechText(interim);
-            syncLiveSpeechToUi();
-            const nextLiveText = getCurrentLiveSpeechText();
-            if (nextLiveText && nextLiveText !== previousLiveText) noteVoiceActivity(nextLiveText);
-        };
-
-            recognition.onerror = (event) => {
-                const ignorable = new Set(["aborted", "no-speech"]);
-                if (!ignorable.has(event.error)) console.warn("SpeechRecognition error:", event.error);
-                if (!state.isRecording) return;
-                if (state.livePreviewMode !== "recognition") return;
-                if (ignorable.has(event.error)) return;
-                stopTrackSpeechRecognition();
-                state.livePreviewMode = "final-only";
-                setStatus(l("Recording... OpenAI will transcribe once when you stop.", "Enregistrement... OpenAI transcrira une seule fois à l’arrêt."));
-            };
-
-            recognition.onend = () => {
-                if (state.isRecording && state.recognitionShouldRestart && state.livePreviewMode === "recognition") {
-                    try {
-                        recognition.start();
-                    } catch (error) {
-                        console.warn("SpeechRecognition restart failed:", error);
-                        stopTrackSpeechRecognition();
-                        state.livePreviewMode = "final-only";
-                        setStatus(l("Recording... OpenAI will transcribe once when you stop.", "Enregistrement... OpenAI transcrira une seule fois à l’arrêt."));
-                    }
-                } else if (state.recognition === recognition) {
-                    state.recognition = null;
-                }
-            };
-
-            recognition.start();
-            state.livePreviewMode = "recognition";
-            return "recognition";
-    } catch (error) {
-        console.warn("SpeechRecognition unavailable:", error);
-        state.recognition = null;
-        state.recognitionShouldRestart = false;
-        return false;
-    }
-}
-
-function startLivePreview() {
-    stopLivePreview();
-    state.liveSpeechFinal = "";
-    state.liveSpeechInterim = "";
-    if (startTrackSpeechRecognition()) return "recognition";
-    state.livePreviewMode = "final-only";
-    return "final-only";
-}
-
-function stopLivePreview() {
-    clearVoiceSilenceTimer();
-    stopTrackSpeechRecognition();
-    state.livePreviewMode = "";
-    if (state.recognition) state.recognition = null;
-}
-
 function hasUsableMediaStream(stream) {
     if (!stream || typeof stream.getAudioTracks !== "function") return false;
     const tracks = stream.getAudioTracks();
@@ -4921,7 +4493,6 @@ function hasUsableMediaStream(stream) {
 }
 
 function releaseMicrophoneStream() {
-    stopLivePreview();
     if (!state.mediaStream) return;
     for (const track of state.mediaStream.getTracks()) {
         try { track.stop(); } catch {}
@@ -4938,20 +4509,16 @@ async function ensureMicrophoneStream() {
 }
 
 function cleanupRecorderDevices() {
-    clearVoiceSilenceTimer();
     state.mediaRecorder = null;
     state.audioChunks = [];
     refreshControls();
 }
 
-function stopRecordingAndFinalize(reason = "manual", statusText = l("Stopping recording...", "Arrêt de l’enregistrement...")) {
+function stopRecordingAndFinalize(statusText = l("Stopping recording...", "Arrêt de l’enregistrement...")) {
     if (!state.isRecording || !state.mediaRecorder) return false;
-    state.voiceStopReason = reason;
     state.voiceFinalizePending = true;
-    clearVoiceSilenceTimer();
     state.isRecording = false;
     refreshControls();
-    stopLivePreview();
     try {
         if (state.mediaRecorder.state !== "inactive") state.mediaRecorder.stop();
     } catch {}
@@ -4961,34 +4528,22 @@ function stopRecordingAndFinalize(reason = "manual", statusText = l("Stopping re
 
 async function transcribeAudio(blob) {
     const requestId = ++state.finalTranscriptionRequestId;
-    const liveFallback = getCurrentLiveSpeechText();
     let finalText = "";
     let statusText = "";
     let isError = false;
     let restoreDraft = false;
     try {
         if (!blob || !blob.size) {
-            if (liveFallback) {
-                finalText = liveFallback;
-                statusText = getVoiceResultStatus({ usedLiveFallback: true, pendingSubmitReason: getPendingVoiceSubmissionReason() });
-            } else {
-                restoreDraft = true;
-                statusText = getPendingVoiceSubmissionReason() === "timeout" ? l("Time is up. No audio was captured.", "Le temps est écoulé. Aucun audio n’a été capté.") : l("No audio was captured.", "Aucun audio n’a été capté.");
-                isError = true;
-            }
+            restoreDraft = true;
+            statusText = getPendingVoiceSubmissionReason() === "timeout" ? l("Time is up. No audio was captured.", "Le temps est écoulé. Aucun audio n’a été capté.") : l("No audio was captured.", "Aucun audio n’a été capté.");
+            isError = true;
             return;
         }
         if (!hasCredential("openai")) {
             openApiKeyDialog("openai");
-            if (liveFallback) {
-                finalText = liveFallback;
-                statusText = getVoiceResultStatus({ usedLiveFallback: true, pendingSubmitReason: getPendingVoiceSubmissionReason() });
-                isError = true;
-            } else {
-                restoreDraft = true;
-                statusText = l("An OpenAI API key is required for speech-to-text.", "Une clé API OpenAI est requise pour la transcription vocale.");
-                isError = true;
-            }
+            restoreDraft = true;
+            statusText = l("An OpenAI API key is required for speech-to-text.", "Une clé API OpenAI est requise pour la transcription vocale.");
+            isError = true;
             return;
         }
         setBusy(true);
@@ -5005,24 +4560,14 @@ async function transcribeAudio(blob) {
             language: isFrenchLocale() ? "fr" : "en"
         });
         if (requestId !== state.finalTranscriptionRequestId) return;
-        finalText = normalizeSpeechText(data?.text || "") || liveFallback;
+        finalText = normalizeSpeechText(data?.text || "");
         if (!finalText) throw new Error(l("No speech was detected.", "Aucune parole n’a été détectée."));
         statusText = getVoiceResultStatus({ pendingSubmitReason: getPendingVoiceSubmissionReason() });
     } catch (error) {
         console.error("Transcription failed:", error);
-        if (liveFallback) {
-            finalText = liveFallback;
-            statusText = getVoiceResultStatus({
-                usedLiveFallback: true,
-                transcriptionFailed: true,
-                pendingSubmitReason: getPendingVoiceSubmissionReason()
-            });
-            isError = true;
-        } else {
-            restoreDraft = true;
-            statusText = error?.message || l("Transcription failed.", "La transcription a échoué.");
-            isError = true;
-        }
+        restoreDraft = true;
+        statusText = safeBridgeErrorMessage(error) || l("Transcription failed.", "La transcription a échoué.");
+        isError = true;
     } finally {
         if (finalText) {
             applyVoiceInputResult(finalText, statusText, { isError });
@@ -5051,10 +4596,9 @@ async function toggleRecording() {
         return;
     }
     if ((state.busy || state.voiceFinalizePending) && !state.isRecording) return;
-    cancelPendingVoiceAutoSend();
 
     if (state.isRecording && state.mediaRecorder) {
-        stopRecordingAndFinalize("manual", l("Stopping recording...", "Arrêt de l’enregistrement..."));
+        stopRecordingAndFinalize(l("Stopping recording...", "Arrêt de l’enregistrement..."));
         return;
     }
     if (!navigator.mediaDevices || typeof MediaRecorder === "undefined") {
@@ -5077,14 +4621,9 @@ async function toggleRecording() {
         state.mediaRecorder = recorder;
         state.audioChunks = [];
         state.draftBeforeRecording = String(messageInputEl.value || "").trim();
-        state.liveSpeechFinal = "";
-        state.liveSpeechInterim = "";
-        state.voiceSpeechDetected = false;
-        state.voiceAutoSubmitSuppressed = false;
-        state.voiceStopReason = "";
         state.voiceFinalizePending = false;
         state.isRecording = true;
-        showLiveVoicePreview(l("Listening...", "Écoute..."));
+        showLiveVoicePreview(l("Recording audio...", "Enregistrement audio..."));
         refreshControls();
 
         recorder.ondataavailable = (event) => {
@@ -5093,7 +4632,6 @@ async function toggleRecording() {
 
             recorder.onerror = () => {
                 state.isRecording = false;
-                stopLivePreview();
                 cleanupRecorderDevices();
                 resetLiveSpeechState();
                 resetVoiceCaptureState();
@@ -5109,16 +4647,10 @@ async function toggleRecording() {
             };
 
             recorder.start(250);
-            const previewMode = startLivePreview();
-            if (previewMode === "recognition") {
-                setStatus(l("Recording... dictation will keep accumulating until you stop or submit.", "Enregistrement... la dictée s’accumule jusqu’à l’arrêt ou à la soumission."));
-            } else {
-                setStatus(l("Recording... OpenAI will transcribe once when you stop or submit.", "Enregistrement... OpenAI transcrira une seule fois à l’arrêt ou à la soumission."));
-            }
+            setStatus(l("Recording... OpenAI will transcribe once when you stop or submit.", "Enregistrement... OpenAI transcrira une seule fois à l’arrêt ou à la soumission."));
     } catch (error) {
         console.error("Microphone error:", error);
         state.isRecording = false;
-        stopLivePreview();
         cleanupRecorderDevices();
         resetLiveSpeechState();
         resetVoiceCaptureState();
@@ -5131,9 +4663,7 @@ async function toggleRecording() {
 function resetStateForNewMatch() {
     state.matchRunId += 1;
     state.finalTranscriptionRequestId += 1;
-    cancelPendingVoiceAutoSend();
     stopSpeechPlayback(false, { resolveCallbacks: false });
-    stopLivePreview();
     releaseMicrophoneStream();
     state.isRecording = false;
     state.voiceFinalizePending = false;
@@ -5175,7 +4705,6 @@ function resetStateForNewMatch() {
     state.speechChunkCounts = new Map();
     state.speechStartCallbacks = new Map();
     state.speechCompletionCallbacks = new Map();
-    state.voiceMode = normalizeVoiceMode(voiceModeSelectEl?.value || "openai");
     state.participantTypes = {
         human: normalizeParticipantMode(participantOneTypeSelectEl?.value || "human"),
         ai: "ai"
@@ -5195,10 +4724,9 @@ function resetStateForNewMatch() {
 
 function fullReset() {
     resetStateForNewMatch();
-    syncVoiceModeStateFromControls();
     syncParticipantSetupUi();
     currentPhaseTitleEl.textContent = l("Setup", "Configuration");
-    currentPhaseMetaEl.textContent = l("Upload two cases and start the match.", "Téléversez deux cas et démarrez le match.");
+    currentPhaseMetaEl.textContent = l("Enter two cases and start the match.", "Saisissez deux cas et démarrez le match.");
     timerDisplayEl.textContent = "--:--";
     timerHintEl.textContent = l("No active timed phase yet.", "Aucune phase minutée en cours.");
     coinChoicePanelEl.hidden = true;
@@ -5238,9 +4766,7 @@ async function startMatch() {
         state.cases[1] = case1;
         state.cases[2] = case2;
         state.judgeMode = judgeModeSelectEl.value;
-        state.voiceMode = normalizeVoiceMode(voiceModeSelectEl?.value || "openai");
         state.liveScreenActive = true;
-        updateVoiceDisclosure();
         renderMatchCaseReference();
         updateMatchSummaryPlaceholder();
         updatePhaseHeader();
@@ -5334,7 +4860,7 @@ function phaseAnnouncementText(phase) {
         const caseData = state.cases[phase.caseNum];
         const leader = speakerName(state.leadByCase[phase.caseNum]);
         const responder = speakerName(otherRole(state.leadByCase[phase.caseNum]));
-        const moderatorQuestion = SPEECH_PACING.ensureSentenceEnding(caseData.question, "?");
+        const moderatorQuestion = ensureSentenceEnding(caseData.question, "?");
         return isFrenchLocale()
         ? `Nous sommes maintenant prêtes à commencer le ${caseLabel(phase.caseNum)}. Le cas s’intitule « ${caseData.title} ». La question est : ${moderatorQuestion} ${leader} mènera ce cas et ${responder} répondra.`
         : `We are ready to begin Case #${phase.caseNum}. The case is "${caseData.title}". The question is: ${moderatorQuestion} ${leader} will lead this case, and ${responder} will respond.`;
@@ -5446,7 +4972,6 @@ function enterCurrentPhase() {
 function advancePhase() {
     if (state.completed) return;
     if (state.currentPhaseIndex + 1 >= state.phases.length) return;
-    cancelPendingVoiceAutoSend();
     clearPhaseAwaitingPlayback();
     state.pendingAutoActionPhaseId = "";
     state.mainComposerHydratedPhaseId = "";
@@ -5704,7 +5229,7 @@ function submitComposerAction() {
     if (!currentPhaseUsesMainComposer(phase)) return;
     if (state.isRecording) {
         setPendingVoiceSubmission("manual", phase.id);
-        if (!stopRecordingAndFinalize("submit", getStopRecordingAndSubmitStatusText(phase))) resolvePendingVoiceSubmission();
+        if (!stopRecordingAndFinalize(getStopRecordingAndSubmitStatusText(phase))) resolvePendingVoiceSubmission();
         return;
     }
     const text = getComposerDraftTextForPhase(phase);
@@ -5731,7 +5256,7 @@ function askHumanJudgeQuestion(judgeNumber) {
     }
     if (state.isRecording) {
         setPendingVoiceSubmission("manual", phase.id);
-        if (!stopRecordingAndFinalize("submit", getStopRecordingAndSubmitStatusText(phase))) resolvePendingVoiceSubmission();
+        if (!stopRecordingAndFinalize(getStopRecordingAndSubmitStatusText(phase))) resolvePendingVoiceSubmission();
         return;
     }
     const judge = judgeInputs.find((item) => item.number === judgeNumber);
@@ -5810,7 +5335,7 @@ document.querySelectorAll(".ask-judge-btn").forEach((button) => {
 
 messageInputEl.addEventListener("pointerdown", () => {
     if (state.isRecording) {
-        if (stopRecordingAndFinalize("interrupted", l("Stopping recording so you can edit the draft.", "Arrêt de l’enregistrement pour vous permettre de modifier le brouillon."))) return;
+        if (stopRecordingAndFinalize(l("Stopping recording so you can edit the draft.", "Arrêt de l’enregistrement pour vous permettre de modifier le brouillon."))) return;
     }
     if (state.voiceFinalizePending) setStatus(l("Finalizing the recording so you can edit the draft.", "Finalisation de l’enregistrement pour vous permettre de modifier le brouillon."));
 });
@@ -5845,10 +5370,6 @@ humanNameInputEl.addEventListener("input", refreshParticipantScoreLabels);
 aiNameInputEl.addEventListener("input", refreshParticipantScoreLabels);
 
 judgeModeSelectEl.addEventListener("change", refreshControls);
-voiceModeSelectEl.addEventListener("change", () => {
-    syncVoiceModeStateFromControls();
-    refreshControls();
-});
 
 judgeInputs.forEach((judge) => {
     judge.question.addEventListener("input", () => {
@@ -5883,7 +5404,6 @@ window.addEventListener("focus", () => {
     applyLocaleToUi();
     syncParticipantSetupUi();
     refreshParticipantScoreLabels();
-    syncVoiceModeStateFromControls();
     refreshControls();
     void refreshCredentialStatus({ force: true }).then(() => {
         refreshControls();
@@ -5916,7 +5436,6 @@ async function initializeCredentialState() {
         return;
     }
     try {
-        await migrateLegacyOpenAiCredential();
         await refreshCredentialStatus({ force: true });
         if (!state.started && !state.completed) setStatus(l("Ready.", "Prêt."));
         refreshControls();

@@ -10,14 +10,14 @@ const {
 } = require("../src/main/validation");
 
 test("every catalog debate model is accepted and routed only to its catalog provider", () => {
-    assert.equal(catalog.MATCH_MODELS.length, 6);
+    assert.equal(catalog.MATCH_MODELS.length, 5);
     for (const model of catalog.MATCH_MODELS) {
         const request = validateGenerateRequest({ model: model.id, userPrompt: "Debate this case." });
         assert.equal(request.model, model.id);
         assert.equal(request.provider, model.provider);
     }
     assert.throws(
-        () => validateGenerateRequest({ model: "gpt-4o", userPrompt: "No.", provider: "openai" }),
+        () => validateGenerateRequest({ model: "retired-debate-model", userPrompt: "No.", provider: "openai" }),
         /not supported/
     );
     assert.throws(
@@ -33,7 +33,7 @@ test("reasoning effort is validated per selected model", () => {
         reasoningEffort: "max"
     }).reasoningEffort, "max");
     assert.equal(validateGenerateRequest({
-        model: "gpt-5.5",
+        model: "gpt-5.6-terra",
         userPrompt: "test",
         reasoningEffort: "none"
     }).reasoningEffort, "none");
@@ -41,11 +41,6 @@ test("reasoning effort is validated per selected model", () => {
         model: "claude-fable-5",
         userPrompt: "test",
         reasoningEffort: "none"
-    }), /selected model/);
-    assert.throws(() => validateGenerateRequest({
-        model: "gpt-5.5",
-        userPrompt: "test",
-        reasoningEffort: "max"
     }), /selected model/);
     assert.equal(validateGenerateRequest({
         model: "claude-sonnet-5",
@@ -58,7 +53,9 @@ test("audio defaults and model allowlists come from the shared catalog", () => {
     const speech = validateSpeechRequest({ input: "Read this aloud." });
     assert.equal(speech.model, catalog.AUDIO_MODELS.speech);
     assert.equal(speech.responseFormat, "mp3");
-    assert.throws(() => validateSpeechRequest({ model: "gpt-4o-mini-tts", input: "No." }), /not supported/);
+    assert.throws(() => validateSpeechRequest({ model: "retired-speech-model", input: "No." }), /not supported/);
+    assert.equal(validateSpeechRequest({ input: "No.", format: "wav" }).responseFormat, "mp3");
+    assert.throws(() => validateSpeechRequest({ input: "No.", responseFormat: "wav" }), /Only MP3/);
 
     const finalTranscription = validateTranscriptionRequest({ bytes: [1, 2, 3], mimeType: "audio/webm" });
     assert.equal(finalTranscription.model, catalog.AUDIO_MODELS.finalTranscription);
@@ -68,8 +65,12 @@ test("audio defaults and model allowlists come from the shared catalog", () => {
         mimeType: "audio/ogg;codecs=opus"
     }).model, catalog.AUDIO_MODELS.finalTranscription);
     assert.throws(() => validateTranscriptionRequest({
-        model: "whisper-1",
+        model: "retired-transcription-model",
         bytes: [1],
         mimeType: "audio/webm"
     }), /not supported/);
+    assert.throws(() => validateTranscriptionRequest({
+        audioBytes: [1],
+        mimeType: "audio/webm"
+    }), /Audio bytes are required/);
 });

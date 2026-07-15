@@ -26,13 +26,11 @@
       "preload.js",
       "src/main/**/*.js",
       "src/shared/model-catalog.js",
-      "src/shared/speech-pacing.js",
       "src/shared/ai-turn-prompt.js",
       "debater.html",
       "debater.js",
       "instructions.html",
       "styles.css",
-      "app-logo.png",
       "assets/app-icon.png",
       "ethics-bowl-logo.png",
       "assets/icon.png"

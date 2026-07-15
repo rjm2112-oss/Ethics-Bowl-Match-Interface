@@ -14,7 +14,6 @@
         Object.freeze({ id: "gpt-5.6-sol", provider: "openai", label: "GPT-5.6 Sol" }),
         Object.freeze({ id: "gpt-5.6-terra", provider: "openai", label: "GPT-5.6 Terra" }),
         Object.freeze({ id: "gpt-5.6-luna", provider: "openai", label: "GPT-5.6 Luna" }),
-        Object.freeze({ id: "gpt-5.5", provider: "openai", label: "GPT-5.5" }),
         Object.freeze({ id: "claude-fable-5", provider: "anthropic", label: "Claude Fable 5" }),
         Object.freeze({ id: "claude-sonnet-5", provider: "anthropic", label: "Claude Sonnet 5" })
     ]);
