@@ -1105,11 +1105,11 @@ function getPhaseWordGuidance(phase) {
 
     if (phase.kind === "speech" && phase.subtype === "response") {
         return {
-            min: 373,
-            max: 398,
-            preferredTarget: 385,
+            min: 368,
+            max: 393,
+            preferredTarget: 375,
             revisionTolerance: 100,
-            label: "373-398 words."
+            label: "368-393 words."
         };
     }
 
@@ -1117,7 +1117,7 @@ function getPhaseWordGuidance(phase) {
         return {
             min: 260,
             max: 300,
-            preferredTarget: 275,
+            preferredTarget: 280,
             revisionTolerance: 100,
             label: "260-300 words."
         };
