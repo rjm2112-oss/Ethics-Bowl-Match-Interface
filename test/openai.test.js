@@ -69,7 +69,7 @@ test("OpenAI Responses parses structured JSON and preserves the requested schema
     assert.deepEqual(body.text.format, { type: "json_schema", ...jsonSchema });
 });
 
-test("OpenAI Responses retries transient statuses and recovers an empty output-budget response", async () => {
+test("OpenAI Responses retries transient statuses and replaces a partial output-budget response without changing effort", async () => {
     const bodies = [];
     const delays = [];
     let call = 0;
@@ -78,7 +78,11 @@ test("OpenAI Responses retries transient statuses and recovers an empty output-b
             call += 1;
             bodies.push(JSON.parse(options.body));
             if (call === 1) return jsonResponse({ error: { message: "busy" } }, { status: 429, headers: { "retry-after": "0" } });
-            if (call === 2) return jsonResponse({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" } });
+            if (call === 2) return jsonResponse({
+                status: "incomplete",
+                incomplete_details: { reason: "max_output_tokens" },
+                output_text: "This fragment must not be returned"
+            });
             return jsonResponse({ output_text: "Recovered." });
         },
         sleep: async (delay) => delays.push(delay)
@@ -88,10 +92,26 @@ test("OpenAI Responses retries transient statuses and recovers an empty output-b
     assert.equal(call, 3);
     assert.deepEqual(delays, [0]);
     assert.equal(bodies[2].max_output_tokens, 2000);
-    assert.equal("reasoning" in bodies[2], false);
+    assert.deepEqual(bodies[2].reasoning, { effort: "medium" });
 });
 
-test("OpenAI speech is fixed to MP3-compatible fields, omits instructions, retries, and returns typed bytes", async () => {
+test("OpenAI Responses rejects a second incomplete response instead of exposing partial text", async () => {
+    const adapter = createOpenAiAdapter({
+        fetchImpl: async () => jsonResponse({
+            status: "incomplete",
+            incomplete_details: { reason: "max_output_tokens" },
+            output_text: "Still unfinished"
+        }),
+        sleep: async () => {}
+    });
+
+    await assert.rejects(
+        adapter.generate(textRequest(), "openai-test-value"),
+        /before completing the response/
+    );
+});
+
+test("OpenAI speech sends supported voice instructions, retries, and returns typed bytes", async () => {
     const calls = [];
     const adapter = createOpenAiAdapter({
         fetchImpl: async (url, options) => {
@@ -103,19 +123,20 @@ test("OpenAI speech is fixed to MP3-compatible fields, omits instructions, retri
     });
 
     const result = await adapter.speech({
-        model: "tts-1-hd",
-        voice: "alloy",
+        model: "gpt-4o-mini-tts",
+        voice: "sage",
         input: "Read this.",
         responseFormat: "mp3",
-        instructions: "This field must not be sent."
+        instructions: "Use a natural, measured cadence."
     }, "openai-test-value");
     assert.equal(calls.length, 2);
     assert.equal(calls[1].url, SPEECH_URL);
     assert.deepEqual(JSON.parse(calls[1].options.body), {
-        model: "tts-1-hd",
-        voice: "alloy",
+        model: "gpt-4o-mini-tts",
+        voice: "sage",
         input: "Read this.",
-        response_format: "mp3"
+        response_format: "mp3",
+        instructions: "Use a natural, measured cadence."
     });
     assert.ok(result.bytes instanceof Uint8Array);
     assert.deepEqual([...result.bytes], [10, 20, 30]);
@@ -159,8 +180,8 @@ test("OpenAI requests fail clearly when the provider stalls", async () => {
             }, { once: true });
         }),
         sleep: async () => {},
-        requestTimeoutMs: 5
+        requestTimeoutMs: 1000
     });
 
-    await assert.rejects(adapter.generate(textRequest(), "openai-test-value"), /timed out/);
+    await assert.rejects(adapter.generate(textRequest({ requestTimeoutMs: 5 }), "openai-test-value"), /timed out/);
 });

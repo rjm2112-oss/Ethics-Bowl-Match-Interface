@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const path = require("node:path");
 
 const ENVIRONMENT_KEYS = Object.freeze({
     openai: "OPENAI_API_KEY",
@@ -49,6 +50,12 @@ function cleanCredential(value) {
     return typeof value === "string" ? value.trim() : "";
 }
 
+function resolveCredentialFilePath({ isPackaged = false, appDirectory = "", appImagePath = "" } = {}) {
+    if (!isPackaged) return path.join(appDirectory, ".env.local");
+    const cleanAppImagePath = cleanCredential(appImagePath);
+    return cleanAppImagePath ? path.join(path.dirname(cleanAppImagePath), ".env") : null;
+}
+
 function loadCredentialEnvironment({ filePath = null, environment = process.env, readFileSync } = {}) {
     const fileValues = readLocalEnv(filePath, readFileSync);
     const result = {};
@@ -63,5 +70,6 @@ function loadCredentialEnvironment({ filePath = null, environment = process.env,
 module.exports = {
     ENVIRONMENT_KEYS,
     loadCredentialEnvironment,
-    parseEnvFile
+    parseEnvFile,
+    resolveCredentialFilePath
 };

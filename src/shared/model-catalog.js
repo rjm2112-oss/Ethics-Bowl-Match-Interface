@@ -26,6 +26,7 @@
     });
     const AUDIO_MODELS = Object.freeze({
         speech: "tts-1-hd",
+        moderatorSpeech: "gpt-4o-mini-tts",
         finalTranscription: "gpt-4o-transcribe"
     });
     const MODEL_BY_ID = new Map(MATCH_MODELS.map((model) => [model.id, model]));

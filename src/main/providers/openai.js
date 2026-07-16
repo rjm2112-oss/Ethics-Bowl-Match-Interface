@@ -113,12 +113,22 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
             body,
             retryStatuses: RETRY_STATUSES,
             sleep,
-            requestTimeoutMs
+            requestTimeoutMs: request.requestTimeoutMs || requestTimeoutMs
         });
         if (!response.ok) throw await createApiError(response);
 
         let data;
         try { data = await response.json(); } catch { throw new Error("The AI provider returned an unreadable response."); }
+        const incompleteReason = String(data?.incomplete_details?.reason || data?.status_details?.reason || "").trim();
+        if (incompleteReason === "max_output_tokens") {
+            if (allowOutputBudgetRecovery) {
+                return generate({
+                    ...request,
+                    maxTokens: Math.min(12000, Math.max(request.maxTokens + 1200, Math.round(request.maxTokens * 1.5)))
+                }, apiKey, false);
+            }
+            throw new Error("The model reached its output-token limit before completing the response.");
+        }
         if (request.jsonSchema) {
             const structured = extractStructured(data);
             if (structured) return structured;
@@ -127,14 +137,6 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
 
         const text = extractText(data);
         if (text) return text;
-        const reason = String(data?.incomplete_details?.reason || data?.status_details?.reason || "").trim();
-        if (allowOutputBudgetRecovery && reason === "max_output_tokens") {
-            return generate({
-                ...request,
-                maxTokens: Math.min(12000, Math.max(request.maxTokens + 1200, Math.round(request.maxTokens * 1.5))),
-                reasoningEffort: null
-            }, apiKey, false);
-        }
         throw emptyTextError(data);
     }
 
@@ -145,6 +147,7 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
             input: request.input,
             response_format: request.responseFormat
         };
+        if (request.instructions) body.instructions = request.instructions;
         if (request.speed != null) body.speed = request.speed;
         const response = await postJsonWithRetries({
             fetchImpl,

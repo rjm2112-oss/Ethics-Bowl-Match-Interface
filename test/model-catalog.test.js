@@ -26,6 +26,7 @@ test("Terra is the participant default and Sol is the judge default", () => {
 test("audio defaults use supported OpenAI models", () => {
     assert.deepEqual(catalog.AUDIO_MODELS, {
         speech: "tts-1-hd",
+        moderatorSpeech: "gpt-4o-mini-tts",
         finalTranscription: "gpt-4o-transcribe"
     });
 });

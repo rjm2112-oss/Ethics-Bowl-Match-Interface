@@ -323,7 +323,7 @@
               <div id="timerDisplay" class="timer-display">--:--</div>
               <div id="timerHint" class="small-note">No active timed phase yet.</div>
 
-              <div class="button-cluster" style="margin-top:12px;">
+              <div id="timerControlButtons" class="button-cluster" style="margin-top:12px;">
                 <button
                   id="pauseTimerBtn"
                   class="secondary-btn"
@@ -353,15 +353,21 @@
                 </button>
               </div>
 
-              <div
-                class="small-note"
-                style="margin-top:10px;"
-                data-i18n-en="Timed phases begin only after the moderator finishes speaking, and moderator-only transitions advance automatically."
-                data-i18n-fr="Les phases minutées commencent seulement quand le modérateur a fini de parler, et les transitions réservées au modérateur avancent automatiquement."
-              >
-                Timed phases begin only after the moderator finishes speaking, and moderator-only transitions advance automatically.
-              </div>
             </div>
+
+            <section id="timingTestPanel" class="progress-card" style="flex:0 0 auto;max-height:340px;overflow:auto;" hidden>
+              <div class="panel-kicker">Timing test mode</div>
+              <button
+                id="timingFastForwardBtn"
+                class="secondary-btn"
+                type="button"
+                aria-pressed="true"
+              >
+                Fast-forward speech: On
+              </button>
+              <div id="timingTestModeNote" class="small-note" style="margin-top:10px;"></div>
+              <div id="timingTestResults" style="display:grid;gap:8px;margin-top:12px;"></div>
+            </section>
 
             <div class="progress-card">
               <div
@@ -473,10 +479,10 @@
                 <div class="phase-copy">
                   <div
                     class="panel-kicker"
-                    data-i18n-en="Live match tracker"
+                    data-i18n-en="MATCH TRACKER"
                     data-i18n-fr="Suivi du match en direct"
                   >
-                    Live match tracker
+                    MATCH TRACKER
                   </div>
                   <div id="currentPhaseTitle" class="phase-title">Setup</div>
                   <div id="currentPhaseMeta" class="phase-meta">
@@ -668,8 +674,14 @@
               <div id="coinTossAnimation" class="coin-toss-animation" aria-hidden="true">
                 <div class="coin-toss-shadow"></div>
                 <div id="coinTossCoin" class="coin-toss-coin">
-                  <div class="coin-face coin-face-front">H</div>
-                  <div class="coin-face coin-face-back">T</div>
+                  <div class="coin-toss-rotator">
+                    <div class="coin-face coin-face-front">
+                      <img class="coin-face-logo" src="app-logo.png" alt="" draggable="false" />
+                    </div>
+                    <div class="coin-face coin-face-back">
+                      <img class="coin-face-logo" src="app-logo-black.png" alt="" draggable="false" />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -720,6 +732,9 @@
 
   <script src="src/shared/model-catalog.js"></script>
   <script src="src/shared/ai-turn-prompt.js"></script>
+  <script src="src/shared/phase-timer-policy.js"></script>
+  <script src="src/shared/speech-timing.js"></script>
+  <script src="src/shared/scorecard-tally.js"></script>
   <script>
     (function () {
       const script = document.createElement("script");

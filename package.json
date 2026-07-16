@@ -7,6 +7,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "start:timing": "electron . --timing-test",
     "test": "node --test test/*.test.js",
     "pack": "electron-builder --dir --publish never",
     "dist": "electron-builder --publish never",
@@ -27,10 +28,15 @@
       "src/main/**/*.js",
       "src/shared/model-catalog.js",
       "src/shared/ai-turn-prompt.js",
+      "src/shared/phase-timer-policy.js",
+      "src/shared/speech-timing.js",
+      "src/shared/scorecard-tally.js",
       "debater.html",
       "debater.js",
       "instructions.html",
       "styles.css",
+      "app-logo.png",
+      "app-logo-black.png",
       "assets/app-icon.png",
       "ethics-bowl-logo.png",
       "assets/icon.png"

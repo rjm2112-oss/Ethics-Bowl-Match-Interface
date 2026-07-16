@@ -4,6 +4,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const catalog = require("../src/shared/model-catalog");
 const {
+    DEFAULT_GENERATE_REQUEST_TIMEOUT_MS,
+    MAX_GENERATE_REQUEST_TIMEOUT_MS,
     validateGenerateRequest,
     validateSpeechRequest,
     validateTranscriptionRequest
@@ -49,6 +51,23 @@ test("reasoning effort is validated per selected model", () => {
     }).reasoningEffort, "xhigh");
 });
 
+test("generation timeout defaults safely and permits a longer final-score window", () => {
+    assert.equal(validateGenerateRequest({
+        model: "gpt-5.6-sol",
+        userPrompt: "test"
+    }).requestTimeoutMs, DEFAULT_GENERATE_REQUEST_TIMEOUT_MS);
+    assert.equal(validateGenerateRequest({
+        model: "gpt-5.6-sol",
+        userPrompt: "test",
+        requestTimeoutMs: 240000
+    }).requestTimeoutMs, 240000);
+    assert.throws(() => validateGenerateRequest({
+        model: "gpt-5.6-sol",
+        userPrompt: "test",
+        requestTimeoutMs: MAX_GENERATE_REQUEST_TIMEOUT_MS + 1
+    }), /Request timeout/);
+});
+
 test("audio defaults and model allowlists come from the shared catalog", () => {
     const speech = validateSpeechRequest({ input: "Read this aloud." });
     assert.equal(speech.model, catalog.AUDIO_MODELS.speech);
@@ -56,6 +75,26 @@ test("audio defaults and model allowlists come from the shared catalog", () => {
     assert.throws(() => validateSpeechRequest({ model: "retired-speech-model", input: "No." }), /not supported/);
     assert.equal(validateSpeechRequest({ input: "No.", format: "wav" }).responseFormat, "mp3");
     assert.throws(() => validateSpeechRequest({ input: "No.", responseFormat: "wav" }), /Only MP3/);
+    assert.equal(validateSpeechRequest({
+        model: catalog.AUDIO_MODELS.speech,
+        voice: "coral",
+        input: "Judge question."
+    }).voice, "coral");
+    assert.throws(() => validateSpeechRequest({
+        model: catalog.AUDIO_MODELS.speech,
+        voice: "verse",
+        input: "Judge question."
+    }), /voice is not supported/);
+    assert.equal(validateSpeechRequest({
+        model: catalog.AUDIO_MODELS.moderatorSpeech,
+        input: "Welcome.",
+        instructions: "Use a measured cadence."
+    }).instructions, "Use a measured cadence.");
+    assert.throws(() => validateSpeechRequest({
+        model: catalog.AUDIO_MODELS.speech,
+        input: "No.",
+        instructions: "Use a measured cadence."
+    }), /does not support voice instructions/);
 
     const finalTranscription = validateTranscriptionRequest({ bytes: [1, 2, 3], mimeType: "audio/webm" });
     assert.equal(finalTranscription.model, catalog.AUDIO_MODELS.finalTranscription);

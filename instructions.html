@@ -103,6 +103,7 @@
     const saveState = document.getElementById("saveState");
     const backLink = document.getElementById("backLink");
     const localeToggleBtn = document.getElementById("instructionsLocaleToggleBtn");
+    const timingTestMode = new URLSearchParams(window.location.search).get("timingTest") === "1";
 
     function normalizeLocale(value) {
       const v = String(value || "").trim().toLowerCase().replace(/_/g, "-");
@@ -127,6 +128,7 @@
     function localizedHref(path, lang = locale) {
       const url = new URL(path, window.location.href);
       url.searchParams.set("lang", lang);
+      if (timingTestMode) url.searchParams.set("timingTest", "1");
       return url.toString();
     }
 
@@ -142,7 +144,7 @@
       document.title = l("Model Instructions", "Instructions du modèle");
       applyStaticTranslations();
       backLink.href = localizedHref("debater.html", locale);
-      localeToggleBtn.textContent = isFrenchLocale() ? "English" : "French";
+      localeToggleBtn.textContent = isFrenchLocale() ? "English" : "Français";
       localeToggleBtn.href = localizedHref("instructions.html", isFrenchLocale() ? "en" : "fr-ca");
       updateMeta();
     }

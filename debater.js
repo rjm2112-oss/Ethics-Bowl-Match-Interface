@@ -13,6 +13,16 @@ const MODEL_CATALOG = window.EthicsModelCatalog;
 if (!MODEL_CATALOG) throw new Error("The shared model catalog could not be loaded.");
 const AI_TURN_PROMPTS = window.EthicsAiTurnPrompts;
 if (!AI_TURN_PROMPTS) throw new Error("The shared AI turn prompt helpers could not be loaded.");
+const PHASE_TIMER_POLICY = window.EthicsPhaseTimerPolicy;
+if (!PHASE_TIMER_POLICY) throw new Error("The shared phase timer policy could not be loaded.");
+const SPEECH_TIMING = window.EthicsSpeechTiming;
+if (!SPEECH_TIMING) throw new Error("The shared speech timing helpers could not be loaded.");
+const SCORECARD_TALLY = window.EthicsScorecardTally;
+if (!SCORECARD_TALLY) throw new Error("The shared scorecard tally helpers could not be loaded.");
+
+const TIMING_TEST_MODE = new URLSearchParams(window.location.search).get("timingTest") === "1";
+const TIMING_TEST_AUTO_START = TIMING_TEST_MODE
+    && new URLSearchParams(window.location.search).get("autoStart") === "1";
 
 const AVAILABLE_MATCH_MODELS = MODEL_CATALOG.MATCH_MODELS;
 const DEFAULT_PARTICIPANT_MODEL = MODEL_CATALOG.DEFAULT_PARTICIPANT_MODEL;
@@ -31,7 +41,7 @@ Authoritative scoring instructions:
 - If a lower-band requirement is missing, do not award a higher-band score in that criterion even if some higher-band qualities appear.
 - Participants may address rubric elements in any order; score the substance, not the order.
 - Within a score band, assign the lower number for weaker or more minimal evidence and the higher number for stronger or more consistent evidence.
--Be exact with numerical score. A perfect score for a criterion is quite rare.
+- Be exact with the numerical score. A perfect score for a criterion is quite rare.
 
 On the case the participant led:
 
@@ -83,63 +93,73 @@ Note: Do not score mere politeness alone. Look for intellectual virtues such as 
 Grand total: /60.
 `;
 
+const OFFICIAL_SCORE_CRITERION_KEYS = Object.freeze(Object.keys(SCORECARD_TALLY.OFFICIAL_BREAKDOWN_RANGES));
+
+function buildFinalJudgeCriterionSchema(criterionKey) {
+    const [minimum, maximum] = SCORECARD_TALLY.OFFICIAL_BREAKDOWN_RANGES[criterionKey];
+    const bandLabels = SCORECARD_TALLY.OFFICIAL_THRESHOLD_BANDS[criterionKey].map((band) => band.label);
+    return {
+        type: "object",
+        additionalProperties: false,
+        required: ["score", "highestSatisfiedBand", "evidence", "limitation", "hasMaterialLimitation", "unmetNextThreshold"],
+        properties: {
+            score: {
+                type: "integer",
+                minimum,
+                maximum,
+                description: "Whole-number score that must fall inside highestSatisfiedBand."
+            },
+            highestSatisfiedBand: {
+                type: "string",
+                enum: bandLabels,
+                description: "Highest rubric band fully supported by transcript evidence; use the lowest band as the fallback."
+            },
+            evidence: {
+                type: "string",
+                description: "Brief concrete transcript evidence establishing every threshold needed for the declared band."
+            },
+            limitation: {
+                type: "string",
+                description: "The most important weakness, omission, ambiguity, or inconsistency in this criterion; if none is material, identify any minor limitation or explicitly state that none was found."
+            },
+            hasMaterialLimitation: {
+                type: "boolean",
+                description: "True only when the limitation is substantive enough to constrain the score within the attained band."
+            },
+            unmetNextThreshold: {
+                type: "string",
+                description: "Specific unmet requirement in the next band, or state that no higher threshold exists when the top band is fully satisfied."
+            }
+        }
+    };
+}
+
+function buildFinalJudgeParticipantSchema() {
+    return {
+        type: "object",
+        additionalProperties: false,
+        required: [...OFFICIAL_SCORE_CRITERION_KEYS, "comment"],
+        properties: {
+            ...Object.fromEntries(OFFICIAL_SCORE_CRITERION_KEYS.map((criterionKey) => [
+                criterionKey,
+                buildFinalJudgeCriterionSchema(criterionKey)
+            ])),
+            comment: { type: "string" }
+        }
+    };
+}
+
 const FINAL_JUDGE_SCORECARD_JSON_SCHEMA = {
     name: "final_judge_scorecard",
     strict: true,
     schema: {
         type: "object",
         additionalProperties: false,
-        required: ["name", "participantOne", "participantTwo"],
+        required: ["comment", "participantOne", "participantTwo"],
         properties: {
-            name: { type: "string" },
-            participantOne: {
-                type: "object",
-                additionalProperties: false,
-                required: [
-                    "presentationQuestion",
-                    "presentationEthics",
-                    "presentationViewpoints",
-                    "responseToFeedback",
-                    "judgesQuestions",
-                    "commentary",
-                    "respectfulDialogue",
-                    "comment"
-                ],
-                properties: {
-                    presentationQuestion: { type: "integer", minimum: 0, maximum: 5 },
-                    presentationEthics: { type: "integer", minimum: 0, maximum: 5 },
-                    presentationViewpoints: { type: "integer", minimum: 0, maximum: 5 },
-                    responseToFeedback: { type: "integer", minimum: 0, maximum: 10 },
-                    judgesQuestions: { type: "integer", minimum: 0, maximum: 20 },
-                    commentary: { type: "integer", minimum: 0, maximum: 10 },
-                    respectfulDialogue: { type: "integer", minimum: 0, maximum: 5 },
-                    comment: { type: "string" }
-                }
-            },
-            participantTwo: {
-                type: "object",
-                additionalProperties: false,
-                required: [
-                    "presentationQuestion",
-                    "presentationEthics",
-                    "presentationViewpoints",
-                    "responseToFeedback",
-                    "judgesQuestions",
-                    "commentary",
-                    "respectfulDialogue",
-                    "comment"
-                ],
-                properties: {
-                    presentationQuestion: { type: "integer", minimum: 0, maximum: 5 },
-                    presentationEthics: { type: "integer", minimum: 0, maximum: 5 },
-                    presentationViewpoints: { type: "integer", minimum: 0, maximum: 5 },
-                    responseToFeedback: { type: "integer", minimum: 0, maximum: 10 },
-                    judgesQuestions: { type: "integer", minimum: 0, maximum: 20 },
-                    commentary: { type: "integer", minimum: 0, maximum: 10 },
-                    respectfulDialogue: { type: "integer", minimum: 0, maximum: 5 },
-                    comment: { type: "string" }
-                }
-            }
+            comment: { type: "string" },
+            participantOne: buildFinalJudgeParticipantSchema(),
+            participantTwo: buildFinalJudgeParticipantSchema()
         }
     }
 };
@@ -190,8 +210,12 @@ const TIMINGS = Object.freeze({
 
 const MAX_JUDGE_QUESTION_CHARS = 500;
 const CREDENTIAL_STATUS_TIMEOUT_MS = 4000;
+const FINAL_SCORECARD_REQUEST_TIMEOUT_MS = 240000;
 const MAX_TTS_CHARS = 2500;
-const SPEECH_CHUNK_MAX = 420;
+const SPEECH_CHUNK_MAX = 800;
+const PARTICIPANT_SPEECH_HANDOFF_GAP_MS = 650;
+const TIMED_SPEECH_TIMER_LEAD_MS = 350;
+const MODERATOR_SPEECH_INSTRUCTIONS = "Speak as a calm, professional debate moderator. Use a natural, measured cadence with brief pauses at sentence boundaries. Keep pauses subtle and consistent: do not rush sentences together and do not add dramatic or prolonged pauses. Preserve the supplied wording exactly.";
 const AUTO_SPEAK_MESSAGE_KINDS = new Set(["moderator", "ai", "ai-alt", "judge"]);
 const AUTO_SPEAK_VOICES = Object.freeze({
     moderator: "sage",
@@ -199,7 +223,7 @@ const AUTO_SPEAK_VOICES = Object.freeze({
     "ai-alt": "alloy",
     judge1: "alloy",
     judge2: "ash",
-    judge3: "verse",
+    judge3: "coral",
     judge: "alloy"
 });
 const STOP_SPEECH_ERROR = "__speech_stopped__";
@@ -261,6 +285,7 @@ function normalizeParticipantMode(value) {
 function localizedHref(path, locale = activeLocale) {
     const url = new URL(path, window.location.href);
     url.searchParams.set("lang", normalizeLocale(locale));
+    if (TIMING_TEST_MODE) url.searchParams.set("timingTest", "1");
     return url.toString();
 }
 
@@ -369,9 +394,14 @@ const phaseListEl = document.getElementById("phaseList");
 
 const timerDisplayEl = document.getElementById("timerDisplay");
 const timerHintEl = document.getElementById("timerHint");
+const timerControlButtonsEl = document.getElementById("timerControlButtons");
 const pauseTimerBtnEl = document.getElementById("pauseTimerBtn");
 const resumeTimerBtnEl = document.getElementById("resumeTimerBtn");
 const resetTimerBtnEl = document.getElementById("resetTimerBtn");
+const timingTestPanelEl = document.getElementById("timingTestPanel");
+const timingFastForwardBtnEl = document.getElementById("timingFastForwardBtn");
+const timingTestModeNoteEl = document.getElementById("timingTestModeNote");
+const timingTestResultsEl = document.getElementById("timingTestResults");
 
 const composerFormEl = document.getElementById("composerForm");
 const messageInputEl = document.getElementById("messageInput");
@@ -504,6 +534,7 @@ const state = {
     openAiSpeechLookaheadPrepared: null,
     openAiSpeechLookaheadEntry: null,
     speechPlaybackActive: false,
+    lastSpeechEndedAtMs: 0,
         speechProgressMessageIndex: -1,
         speechProgressNormalizedCursor: 0,
         speechProgressReadTo: 0,
@@ -513,7 +544,12 @@ const state = {
     speechFollowWantsSmooth: false,
     speechChunkCounts: new Map(),
     speechStartCallbacks: new Map(),
-    speechCompletionCallbacks: new Map()
+    speechCompletionCallbacks: new Map(),
+    timingTestFastForwardEnabled: TIMING_TEST_MODE,
+    timingTestMessageModes: new Map(),
+    timingTestMeasurements: new Map(),
+    timingTestResults: [],
+    timingTestAudioContext: null
 };
 
 function sanitizeText(value) {
@@ -1034,6 +1070,107 @@ function countWords(value) {
     return matches ? matches.length : 0;
 }
 
+function formatPreciseDuration(totalSeconds) {
+    const centiseconds = Math.max(0, Math.round((Number(totalSeconds) || 0) * 100));
+    const minutes = Math.floor(centiseconds / 6000);
+    const seconds = Math.floor((centiseconds % 6000) / 100);
+    const fraction = centiseconds % 100;
+    return `${minutes}:${String(seconds).padStart(2, "0")}.${String(fraction).padStart(2, "0")}`;
+}
+
+function getTimingTestFastForwardForMessage(transcriptIndex) {
+    if (!TIMING_TEST_MODE) return false;
+    if (!state.timingTestMessageModes.has(transcriptIndex)) {
+        state.timingTestMessageModes.set(transcriptIndex, state.timingTestFastForwardEnabled);
+    }
+    return state.timingTestMessageModes.get(transcriptIndex) === true;
+}
+
+function renderTimingTestResults() {
+    if (!timingTestResultsEl) return;
+    timingTestResultsEl.replaceChildren();
+    if (!state.timingTestResults.length) {
+        const empty = document.createElement("div");
+        empty.className = "small-note";
+        empty.textContent = l(
+            "Timed speech measurements will appear here.",
+            "Les mesures des prises de parole minutées apparaîtront ici."
+        );
+        timingTestResultsEl.appendChild(empty);
+        return;
+    }
+
+    [...state.timingTestResults].reverse().forEach((result) => {
+        const card = document.createElement("article");
+        card.className = "timing-sheet";
+        card.style.padding = "10px";
+
+        const title = document.createElement("div");
+        title.style.fontWeight = "750";
+        title.textContent = `${result.phaseTitle} — ${result.label}`;
+
+        const metrics = document.createElement("div");
+        metrics.className = "small-note";
+        metrics.textContent = l(
+            `${result.summary.wordCount} words • audio ${formatPreciseDuration(result.summary.audioDurationSeconds)} • clock ${formatPreciseDuration(result.summary.timerConsumedSeconds)} / ${formatPreciseDuration(result.summary.timerBudgetSeconds)} • ${result.chunkCount} chunks`,
+            `${result.summary.wordCount} mots • audio ${formatPreciseDuration(result.summary.audioDurationSeconds)} • minuterie ${formatPreciseDuration(result.summary.timerConsumedSeconds)} / ${formatPreciseDuration(result.summary.timerBudgetSeconds)} • ${result.chunkCount} segments`
+        );
+
+        const outcome = document.createElement("div");
+        outcome.className = "small-note";
+        outcome.style.fontWeight = "750";
+        if (result.summary.overrunSeconds > 0) {
+            outcome.style.color = "#a33a2b";
+            outcome.textContent = l(
+                `${formatPreciseDuration(result.summary.overrunSeconds)} over time • ${result.summary.wordsPerMinute.toFixed(1)} spoken wpm • ${result.fastForwarded ? "fast-forwarded" : "played live"}`,
+                `${formatPreciseDuration(result.summary.overrunSeconds)} au-delà du temps • ${result.summary.wordsPerMinute.toFixed(1)} mots/min • ${result.fastForwarded ? "avance rapide" : "lecture en direct"}`
+            );
+        } else {
+            outcome.textContent = l(
+                `${formatPreciseDuration(result.summary.remainingSeconds)} left • ${result.summary.wordsPerMinute.toFixed(1)} spoken wpm • ${result.fastForwarded ? "fast-forwarded" : "played live"}`,
+                `${formatPreciseDuration(result.summary.remainingSeconds)} restant • ${result.summary.wordsPerMinute.toFixed(1)} mots/min • ${result.fastForwarded ? "avance rapide" : "lecture en direct"}`
+            );
+        }
+
+        card.append(title, metrics, outcome);
+        timingTestResultsEl.appendChild(card);
+    });
+}
+
+function refreshTimingTestUi() {
+    if (!timingTestPanelEl) return;
+    timingTestPanelEl.hidden = !TIMING_TEST_MODE;
+    timingTestPanelEl.style.display = TIMING_TEST_MODE ? "" : "none";
+    if (!TIMING_TEST_MODE) return;
+    if (timingFastForwardBtnEl) {
+        timingFastForwardBtnEl.setAttribute("aria-pressed", state.timingTestFastForwardEnabled ? "true" : "false");
+        timingFastForwardBtnEl.textContent = state.timingTestFastForwardEnabled
+            ? l("Fast-forward speech: On", "Avance rapide de la parole : activée")
+            : l("Fast-forward speech: Off", "Avance rapide de la parole : désactivée");
+    }
+    if (timingTestModeNoteEl) {
+        timingTestModeNoteEl.textContent = state.timingTestFastForwardEnabled
+            ? l(
+                "Generated audio is decoded and measured exactly, then skipped. A change during speech applies to the next spoken message.",
+                "L’audio généré est décodé et mesuré exactement, puis ignoré. Un changement pendant une prise de parole s’applique au prochain message parlé."
+            )
+            : l(
+                "Speech plays in real time while the same decoded-audio timing report continues. A change during speech applies to the next spoken message.",
+                "La parole est lue en temps réel et le même rapport de durée audio décodée continue. Un changement pendant une prise de parole s’applique au prochain message parlé."
+            );
+    }
+    renderTimingTestResults();
+}
+
+function toggleTimingTestFastForward() {
+    if (!TIMING_TEST_MODE) return;
+    state.timingTestFastForwardEnabled = !state.timingTestFastForwardEnabled;
+    refreshTimingTestUi();
+    setStatus(state.timingTestFastForwardEnabled
+        ? l("Speech fast-forward is on for the next spoken message.", "L’avance rapide est activée pour le prochain message parlé.")
+        : l("Normal playback is on for the next spoken message.", "La lecture normale est activée pour le prochain message parlé."));
+}
+
 function clampNumber(value, min, max) {
     const n = Number(value);
     if (!Number.isFinite(n)) return min;
@@ -1052,31 +1189,25 @@ function getPhaseWordGuidance(phase) {
     if (isFrenchLocale()) {
         if (phase.kind === "speech" && phase.subtype === "presentation") {
             return {
-                min: 625,
-                max: 650,
-                preferredTarget: 635,
-                revisionTolerance: 100,
-                label: "625-650 words"
+                min: 635,
+                max: 645,
+                preferredTarget: 640
             };
         }
 
         if (phase.kind === "speech" && (phase.subtype === "commentary" || phase.subtype === "response")) {
             return {
-                min: 360,
-                max: 380,
-                preferredTarget: 372,
-                revisionTolerance: 100,
-                label: "360-380 words."
+                min: 372,
+                max: 382,
+                preferredTarget: 377
             };
         }
 
         if (phase.kind === "judgeAnswer") {
             return {
-                min: 255,
-                max: 295,
-                preferredTarget: 270,
-                revisionTolerance: 100,
-                label: "255-295 words."
+                min: 265,
+                max: 275,
+                preferredTarget: 270
             };
         }
 
@@ -1085,41 +1216,33 @@ function getPhaseWordGuidance(phase) {
 
     if (phase.kind === "speech" && phase.subtype === "presentation") {
         return {
-            min: 645,
-            max: 670,
-            preferredTarget: 660,
-            revisionTolerance: 100,
-            label: "645-670 words"
+            min: 705,
+            max: 715,
+            preferredTarget: 710
         };
     }
 
     if (phase.kind === "speech" && phase.subtype === "commentary") {
         return {
-            min: 368,
-            max: 393,
-            preferredTarget: 380,
-            revisionTolerance: 100,
-            label: "368-393 words."
+            min: 405,
+            max: 415,
+            preferredTarget: 410
         };
     }
 
     if (phase.kind === "speech" && phase.subtype === "response") {
         return {
-            min: 368,
-            max: 393,
-            preferredTarget: 375,
-            revisionTolerance: 100,
-            label: "368-393 words."
+            min: 405,
+            max: 415,
+            preferredTarget: 410
         };
     }
 
     if (phase.kind === "judgeAnswer") {
         return {
-            min: 260,
-            max: 300,
-            preferredTarget: 280,
-            revisionTolerance: 100,
-            label: "260-300 words."
+            min: 300,
+            max: 310,
+            preferredTarget: 305
         };
     }
 
@@ -1153,22 +1276,16 @@ function getAiRevisionWordPlan(phase, baselineWordCount, currentDraftText, optio
     const originalDraftWordCount = Math.max(0, Math.round(Number(baselineWordCount) || 0));
     const currentDraftWordCount = countWords(currentDraftText);
     const exactTarget = options.exactTarget === true || (options.exactTarget !== false && shouldUseFixedRevisionWordTarget(phase));
-    const requestedTolerance = Number(options.tolerance);
     const targetSeed = exactTarget
         ? getPreferredPhaseWordTarget(phase, guidance)
         : (originalDraftWordCount || currentDraftWordCount || guidance.preferredTarget);
     const targetWordCount = clampWordTarget(targetSeed, guidance);
-    const tolerance = Number.isFinite(requestedTolerance)
-        ? Math.max(0, Math.round(requestedTolerance))
-        : exactTarget
-        ? 0
-        : guidance.revisionTolerance || 12;
     return {
         originalDraftWordCount,
         currentDraftWordCount,
         targetWordCount,
-        allowedMin: Math.max(guidance.min, targetWordCount - tolerance),
-        allowedMax: Math.min(guidance.max, targetWordCount + tolerance),
+        allowedMin: exactTarget ? targetWordCount : guidance.min,
+        allowedMax: exactTarget ? targetWordCount : guidance.max,
         hardMin: guidance.min,
         hardMax: guidance.max,
         preferredTarget: guidance.preferredTarget,
@@ -1436,8 +1553,8 @@ function getLeadSummaryText() {
         return l("Pending toss.", "Tirage en attente.");
     }
     return isFrenchLocale()
-    ? `Nº 1 : ${speakerName(state.leadByCase[1])} • Nº 2 : ${speakerName(state.leadByCase[2])}`
-    : `#1: ${speakerName(state.leadByCase[1])} • #2: ${speakerName(state.leadByCase[2])}`;
+    ? `Nº 1 : ${speakerName(state.leadByCase[1])}\nNº 2 : ${speakerName(state.leadByCase[2])}`
+    : `#1: ${speakerName(state.leadByCase[1])}\n#2: ${speakerName(state.leadByCase[2])}`;
 }
 
 function getCoinTossSummaryText() {
@@ -1546,8 +1663,8 @@ function renderMatchCaseReference() {
 function syncCoinTossFaceLabels() {
     if (!coinTossCoinEl) return;
     const [front, back] = coinTossCoinEl.querySelectorAll(".coin-face");
-    if (front) front.textContent = coinSideLabel("heads").slice(0, 1).toUpperCase();
-    if (back) back.textContent = coinSideLabel("tails").slice(0, 1).toUpperCase();
+    if (front) front.dataset.sideLabel = coinSideLabel("heads");
+    if (back) back.dataset.sideLabel = coinSideLabel("tails");
 }
 
 function syncCoinTossUi() {
@@ -1746,13 +1863,7 @@ function invokeSpeechStartCallbacks(transcriptIndex) {
     const callbacks = state.speechStartCallbacks.get(transcriptIndex) || [];
     state.speechStartCallbacks.delete(transcriptIndex);
     callbacks.forEach((callback) => {
-        try {
-            window.setTimeout(() => {
-                try { callback(); } catch (error) { console.error("Speech start callback failed:", error); }
-            }, 0);
-        } catch (error) {
-            console.error("Could not schedule speech start callback:", error);
-        }
+        try { callback(); } catch (error) { console.error("Speech start callback failed:", error); }
     });
 }
 
@@ -1950,7 +2061,6 @@ function beginSpeechProgressForQueueEntry(entry) {
     if (!entryText) return;
     const messageIndex = Number.isInteger(entry?.transcriptIndex) ? entry.transcriptIndex : getMostRecentReadableTranscriptIndex();
     if (messageIndex < 0 || !state.transcript[messageIndex]) return;
-    invokeSpeechStartCallbacks(messageIndex);
     if (state.speechProgressMessageIndex !== messageIndex) {
         const previousIndex = state.speechProgressMessageIndex;
         state.speechProgressMessageIndex = messageIndex;
@@ -2002,16 +2112,29 @@ function createMessageElement(message, index) {
 
 function renderTranscript() {
     chatEl.innerHTML = "";
-    if (!state.transcript.length) {
+    const visibleMessages = state.transcript
+        .map((message, index) => ({ message, index }))
+        .filter(({ message }) => !message.hiddenUntilPhaseReady);
+    if (!visibleMessages.length) {
         emptyStateEl.hidden = false;
         chatEl.appendChild(emptyStateEl);
         return;
     }
     emptyStateEl.hidden = true;
-    state.transcript.forEach((message, index) => chatEl.appendChild(createMessageElement(message, index)));
+    visibleMessages.forEach(({ message, index }) => chatEl.appendChild(createMessageElement(message, index)));
     syncSpeechProgressToUi(false);
     if (isSpeechFollowActive()) queueSpeechFollowScroll(false);
     else chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function revealTranscriptMessagesForPhase(phaseId) {
+    let changed = false;
+    state.transcript.forEach((message) => {
+        if (!message.hiddenUntilPhaseReady || message.phaseId !== phaseId) return;
+        message.hiddenUntilPhaseReady = false;
+        changed = true;
+    });
+    if (changed) renderTranscript();
 }
 
 function ensureSpeechAudioEl() {
@@ -2070,6 +2193,7 @@ function resetSpeechAudioEl() {
         audioEl.pause();
         audioEl.currentTime = 0;
     } catch {}
+    audioEl.onplaying = null;
     audioEl.onended = null;
     audioEl.onerror = null;
     if (state.currentAudioUrl) {
@@ -2101,6 +2225,9 @@ function stopSpeechPlayback(showMessage = false, { resolveCallbacks = true } = {
     state.speechProcessing = false;
     clearOpenAiSpeechLookahead();
     state.speechPlaybackActive = false;
+    state.lastSpeechEndedAtMs = 0;
+    state.timingTestMessageModes.clear();
+    state.timingTestMeasurements.clear();
     rejectCurrentSpeechPlayback();
     if (state.currentSpeechController) {
         try { state.currentSpeechController.abort(); } catch {}
@@ -2191,6 +2318,155 @@ async function blobToByteArray(blob) {
     return new Uint8Array(await blob.arrayBuffer());
 }
 
+async function decodeSpeechAudioDuration(audioBytes, audioUrl) {
+    const bytes = toUint8Array(audioBytes);
+    if (!bytes.byteLength) throw new Error("Cannot measure empty speech audio.");
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    let decodeError = null;
+
+    if (AudioContextClass) {
+        try {
+            if (!state.timingTestAudioContext || state.timingTestAudioContext.state === "closed") {
+                state.timingTestAudioContext = new AudioContextClass();
+            }
+            const copiedBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            const decoded = await state.timingTestAudioContext.decodeAudioData(copiedBuffer);
+            if (Number.isFinite(decoded?.duration) && decoded.duration > 0) {
+                return { durationSeconds: decoded.duration, method: "decoded-pcm" };
+            }
+            throw new Error("Decoded speech audio had no measurable duration.");
+        } catch (error) {
+            decodeError = error;
+        }
+    }
+
+    if (!audioUrl) throw decodeError || new Error("Speech audio duration could not be decoded.");
+    return new Promise((resolve, reject) => {
+        const probe = new Audio();
+        let settled = false;
+        const timeoutId = window.setTimeout(() => finish(null, new Error("Speech audio metadata timing timed out.")), 10000);
+        const cleanup = () => {
+            window.clearTimeout(timeoutId);
+            probe.onloadedmetadata = null;
+            probe.ondurationchange = null;
+            probe.onerror = null;
+            probe.removeAttribute("src");
+            try { probe.load(); } catch {}
+        };
+        const finish = (durationSeconds, error = null) => {
+            if (settled) return;
+            if (!error && (!Number.isFinite(durationSeconds) || durationSeconds <= 0)) return;
+            settled = true;
+            cleanup();
+            if (error) reject(error);
+            else resolve({ durationSeconds, method: "media-metadata" });
+        };
+        const readDuration = () => finish(probe.duration);
+        probe.preload = "metadata";
+        probe.onloadedmetadata = readDuration;
+        probe.ondurationchange = readDuration;
+        probe.onerror = () => finish(null, decodeError || new Error("Speech audio duration could not be measured."));
+        probe.src = audioUrl;
+        try { probe.load(); } catch (error) { finish(null, decodeError || error); }
+    });
+}
+
+function recordTimingTestSpeechChunk(prepared, decodedTiming) {
+    if (!TIMING_TEST_MODE || !prepared?.entry || !decodedTiming) return null;
+    const entry = prepared.entry;
+    const transcriptIndex = Number(entry.transcriptIndex);
+    if (!Number.isInteger(transcriptIndex) || transcriptIndex < 0) return null;
+    const chunkCount = Math.max(1, Math.round(Number(entry.chunkCount) || 1));
+    let measurement = state.timingTestMeasurements.get(transcriptIndex);
+    if (!measurement) {
+        measurement = {
+            transcriptIndex,
+            chunkCount,
+            measuredChunks: 0,
+            audioDurationSeconds: 0,
+            timerLeadMs: 0,
+            decodeMethods: new Set(),
+            fastForwarded: getTimingTestFastForwardForMessage(transcriptIndex)
+        };
+        state.timingTestMeasurements.set(transcriptIndex, measurement);
+    }
+
+    measurement.measuredChunks += 1;
+    measurement.audioDurationSeconds += decodedTiming.durationSeconds;
+    measurement.timerLeadMs += Math.max(0, Number(entry.speechStartLeadMs) || 0);
+    measurement.decodeMethods.add(decodedTiming.method);
+    if (measurement.measuredChunks < measurement.chunkCount) return null;
+
+    state.timingTestMeasurements.delete(transcriptIndex);
+    state.timingTestMessageModes.delete(transcriptIndex);
+    const message = state.transcript[transcriptIndex] || {};
+    const phase = getPhaseById(message.phaseId);
+    if (!SPEECH_TIMING.shouldReportTimedMessage(message, phase)) return null;
+
+    const result = {
+        transcriptIndex,
+        phaseId: phase.id,
+        phaseTitle: phase.title,
+        label: message.label || l("Speaker", "Oratrice"),
+        chunkCount: measurement.chunkCount,
+        decodeMethods: [...measurement.decodeMethods],
+        fastForwarded: measurement.fastForwarded,
+        summary: SPEECH_TIMING.summarizeTimedSpeech({
+            audioDurationSeconds: measurement.audioDurationSeconds,
+            timerLeadMs: measurement.timerLeadMs,
+            timerBudgetSeconds: phase.duration,
+            wordCount: countWords(message.text)
+        })
+    };
+    state.timingTestResults.push(result);
+    console.info(`[timing-test-result] ${JSON.stringify({
+        phaseId: result.phaseId,
+        phaseTitle: result.phaseTitle,
+        label: result.label,
+        words: result.summary.wordCount,
+        audioSeconds: Number(result.summary.audioDurationSeconds.toFixed(2)),
+        clockSeconds: Number(result.summary.timerConsumedSeconds.toFixed(2)),
+        budgetSeconds: result.summary.timerBudgetSeconds,
+        remainingSeconds: Number(result.summary.remainingSeconds.toFixed(2)),
+        overrunSeconds: Number(result.summary.overrunSeconds.toFixed(2)),
+        wordsPerMinute: Number(result.summary.wordsPerMinute.toFixed(1)),
+        chunks: result.chunkCount,
+        fastForwarded: result.fastForwarded
+    })}`);
+    renderTimingTestResults();
+    return result;
+}
+
+function freezeTimerForFastForwardedSpeech(entry) {
+    if (!TIMING_TEST_MODE) return;
+    const message = state.transcript[entry?.transcriptIndex] || {};
+    const phase = getPhaseById(message.phaseId);
+    if (!SPEECH_TIMING.isTimedSpokenPhase(phase)) return;
+    stopTimer();
+    state.timer.phaseId = phase.id;
+    state.timer.remaining = phase.duration;
+    timerDisplayEl.textContent = formatClock(phase.duration);
+    timerHintEl.textContent = l(
+        "Fast-forwarding generated audio; exact virtual clock use will be reported.",
+        "Avance rapide de l’audio généré; l’utilisation exacte de la minuterie virtuelle sera indiquée."
+    );
+}
+
+function showFastForwardedTimingOnTimer(result) {
+    if (!result?.fastForwarded || state.timer.phaseId !== result.phaseId) return;
+    state.timer.remaining = Math.max(0, Math.ceil(result.summary.signedRemainingSeconds));
+    timerDisplayEl.textContent = formatClock(state.timer.remaining);
+    timerHintEl.textContent = result.summary.overrunSeconds > 0
+        ? l(
+            `Fast-forward result: ${formatPreciseDuration(result.summary.overrunSeconds)} over time.`,
+            `Résultat en avance rapide : dépassement de ${formatPreciseDuration(result.summary.overrunSeconds)}.`
+        )
+        : l(
+            `Fast-forward result: ${formatPreciseDuration(result.summary.remainingSeconds)} left.`,
+            `Résultat en avance rapide : ${formatPreciseDuration(result.summary.remainingSeconds)} restant.`
+        );
+}
+
 function createLocalAbortError() {
     const error = new Error(STOP_SPEECH_ERROR);
     error.name = "AbortError";
@@ -2205,18 +2481,25 @@ async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct" 
     state.currentSpeechControllerKind = controllerKind;
     refreshSpeechUi();
     try {
+        const isModerator = entry.kind === "moderator";
         const result = await getAudioBridge().speech({
-            model: AUDIO_MODELS.speech,
+            model: isModerator ? AUDIO_MODELS.moderatorSpeech : AUDIO_MODELS.speech,
             voice: AUTO_SPEAK_VOICES[entry.voiceKey] || AUTO_SPEAK_VOICES[entry.kind] || "alloy",
             input: entry.text.slice(0, MAX_TTS_CHARS),
-            responseFormat: "mp3"
+            responseFormat: "mp3",
+            ...(isModerator ? { instructions: MODERATOR_SPEECH_INSTRUCTIONS } : {})
         });
         if (controller.signal.aborted) throw createLocalAbortError();
         if (token !== state.speechToken) return null;
         const audioBytes = toUint8Array(result?.bytes);
         const blob = new Blob([audioBytes], { type: sanitizeText(result?.mimeType) || "audio/mpeg" });
         if (!blob.size) throw new Error("Empty speech audio response.");
-        return { entry, audioUrl: URL.createObjectURL(blob) };
+        return {
+            entry,
+            audioUrl: URL.createObjectURL(blob),
+            audioBytes,
+            mimeType: blob.type
+        };
     } finally {
         if (state.currentSpeechController === controller) {
             state.currentSpeechController = null;
@@ -2239,19 +2522,39 @@ async function playPreparedOpenAiSpeechChunk(prepared, token) {
     refreshSpeechUi();
     queueSpeechFollowScroll(true);
     try {
-        await new Promise(async (resolve, reject) => {
+        await new Promise((resolve, reject) => {
+            let settled = false;
+            let playbackStarted = false;
+            const notifyPlaybackStarted = () => {
+                if (playbackStarted || token !== state.speechToken) return;
+                playbackStarted = true;
+                invokeSpeechStartCallbacks(prepared.entry?.transcriptIndex);
+            };
             const rejectRef = (error) => {
+                if (settled) return;
+                settled = true;
                 if (state.currentSpeechReject === rejectRef) state.currentSpeechReject = null;
                 reject(error);
             };
             const resolveRef = () => {
+                if (settled) return;
+                notifyPlaybackStarted();
+                settled = true;
                 if (state.currentSpeechReject === rejectRef) state.currentSpeechReject = null;
                 resolve();
             };
             state.currentSpeechReject = rejectRef;
+            audioEl.onplaying = notifyPlaybackStarted;
             audioEl.onended = resolveRef;
             audioEl.onerror = () => rejectRef(new Error("AI voice playback failed."));
-            try { await audioEl.play(); } catch { rejectRef(new Error("Voice autoplay was blocked.")); }
+            try {
+                const playPromise = audioEl.play();
+                if (playPromise && typeof playPromise.then === "function") {
+                    playPromise.then(notifyPlaybackStarted).catch(() => rejectRef(new Error("Voice autoplay was blocked.")));
+                }
+            } catch {
+                rejectRef(new Error("Voice autoplay was blocked."));
+            }
         });
     } finally {
         state.speechPlaybackActive = false;
@@ -2357,10 +2660,61 @@ async function processSpeechQueue(token = state.speechToken) {
                 break;
             }
             if (!prepared) break;
-            beginSpeechProgressForQueueEntry(prepared.entry);
             kickOpenAiSpeechLookahead(token);
+            let timingTestResult = null;
+            const fastForwarded = getTimingTestFastForwardForMessage(prepared.entry?.transcriptIndex);
+            if (TIMING_TEST_MODE) {
+                try {
+                    const decodedTiming = await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
+                    timingTestResult = recordTimingTestSpeechChunk(prepared, decodedTiming);
+                } catch (error) {
+                    if (token !== state.speechToken || error?.name === "AbortError" || error?.message === STOP_SPEECH_ERROR) break;
+                    handleOpenAiSpeechFailure(error, token);
+                    break;
+                }
+            }
+            if (fastForwarded) {
+                invokeSpeechStartCallbacks(prepared.entry?.transcriptIndex);
+                freezeTimerForFastForwardedSpeech(prepared.entry);
+                showFastForwardedTimingOnTimer(timingTestResult);
+                markSpeechChunkComplete(prepared.entry.transcriptIndex);
+                if (prepared.audioUrl) {
+                    try { URL.revokeObjectURL(prepared.audioUrl); } catch {}
+                }
+                refreshSpeechUi();
+                const isLastChunk = Number(prepared.entry?.chunkIndex) + 1 >= Number(prepared.entry?.chunkCount || 1);
+                if (isLastChunk) await waitMs(0);
+                continue;
+            }
+            const minimumHandoffGapMs = Math.max(0, Math.min(3000, Number(prepared.entry?.minimumHandoffGapMs) || 0));
+            const elapsedSincePriorSpeechMs = state.lastSpeechEndedAtMs
+                ? Math.max(0, Date.now() - state.lastSpeechEndedAtMs)
+                : minimumHandoffGapMs;
+            const remainingHandoffGapMs = Math.max(0, minimumHandoffGapMs - elapsedSincePriorSpeechMs);
+            if (remainingHandoffGapMs) {
+                await waitMs(remainingHandoffGapMs);
+                if (token !== state.speechToken) {
+                    if (prepared.audioUrl) {
+                        try { URL.revokeObjectURL(prepared.audioUrl); } catch {}
+                    }
+                    break;
+                }
+            }
+            invokeSpeechStartCallbacks(prepared.entry?.transcriptIndex);
+            const speechStartLeadMs = Math.max(0, Math.min(3000, Number(prepared.entry?.speechStartLeadMs) || 0));
+            if (speechStartLeadMs) {
+                await waitMs(speechStartLeadMs);
+                if (token !== state.speechToken) {
+                    if (prepared.audioUrl) {
+                        try { URL.revokeObjectURL(prepared.audioUrl); } catch {}
+                    }
+                    break;
+                }
+            }
+            beginSpeechProgressForQueueEntry(prepared.entry);
             try {
                 await playPreparedOpenAiSpeechChunk(prepared, token);
+                state.lastSpeechEndedAtMs = Date.now();
                 markSpeechChunkComplete(prepared.entry.transcriptIndex);
             } catch (error) {
                 if (token !== state.speechToken || error?.name === "AbortError" || error?.message === STOP_SPEECH_ERROR) break;
@@ -2380,18 +2734,25 @@ async function processSpeechQueue(token = state.speechToken) {
     }
 }
 
-function enqueueTranscriptSpeech(kind, text, transcriptIndex = -1, voiceKey = "") {
+function enqueueTranscriptSpeech(kind, text, transcriptIndex = -1, voiceKey = "", options = {}) {
     if (!AUTO_SPEAK_MESSAGE_KINDS.has(kind)) return;
     const normalized = normalizeSpeechText(text);
     if (!normalized) return;
-    const chunks = chunkTextForSpeech(normalized, SPEECH_CHUNK_MAX)
-    .map((textChunk) => ({
+    const speechStartLeadMs = Math.max(0, Math.min(3000, Number(options.speechStartLeadMs) || 0));
+    const minimumHandoffGapMs = Math.max(0, Math.min(3000, Number(options.minimumHandoffGapMs) || 0));
+    const speechTextChunks = chunkTextForSpeech(normalized, SPEECH_CHUNK_MAX)
+    .map((textChunk) => textChunk.slice(0, MAX_TTS_CHARS))
+    .filter(Boolean);
+    const chunks = speechTextChunks.map((textChunk, chunkIndex) => ({
         kind,
         voiceKey: voiceKey || kind,
-        text: textChunk.slice(0, MAX_TTS_CHARS),
-        transcriptIndex
-    }))
-    .filter((entry) => entry.text);
+        text: textChunk,
+        transcriptIndex,
+        chunkIndex,
+        chunkCount: speechTextChunks.length,
+        speechStartLeadMs: chunkIndex === 0 ? speechStartLeadMs : 0,
+        minimumHandoffGapMs: chunkIndex === 0 ? minimumHandoffGapMs : 0
+    }));
     if (!chunks.length) {
         finalizeSpeechPlaybackForMessage(transcriptIndex);
         return;
@@ -2416,7 +2777,8 @@ function appendMessage(kind, label, text, options = {}) {
                           caseNum: options.caseNum || 0,
                               phaseId: options.phaseId || "",
                               voiceKey,
-                              substantive: options.substantive !== false
+                              substantive: options.substantive !== false,
+                              hiddenUntilPhaseReady: options.hiddenUntilPhaseReady === true
     });
     const transcriptIndex = state.transcript.length - 1;
     const onPlaybackStart = typeof options.onPlaybackStart === "function" ? options.onPlaybackStart : null;
@@ -2439,7 +2801,7 @@ function appendMessage(kind, label, text, options = {}) {
         }
     }
     renderTranscript();
-    if (!options.silent) enqueueTranscriptSpeech(kind, text, transcriptIndex, voiceKey);
+    if (!options.silent) enqueueTranscriptSpeech(kind, text, transcriptIndex, voiceKey, options);
     return transcriptIndex;
 }
 
@@ -2598,7 +2960,7 @@ function clearAiPreparationSnapshot(phaseId) {
 
 function getAiTurnMaxOutputTokens(phase) {
     if (!phase) return 2200;
-    if (phase.kind === "judgeAnswer") return 1800;
+    if (phase.kind === "judgeAnswer") return 3000;
     if (phase.subtype === "presentation") return 4000;
     if (phase.subtype === "commentary" || phase.subtype === "response") return 2800;
     return 2200;
@@ -2754,7 +3116,21 @@ function primeAiJudgeQuestionPreparationForPhase(phase) {
 
 function primeCurrentAiJudgeQuestionRevision(phase) {
     if (!phase || state.judgeMode !== "ai" || phase.kind !== "judgeQuestion") return;
-    void maybePrepareAiJudgeQuestion(phase.caseNum, phase.judgeNumber).catch((error) => {
+    const phaseId = phase.id;
+    const runId = state.matchRunId;
+    void maybePrepareAiJudgeQuestion(phase.caseNum, phase.judgeNumber)
+    .then((question) => {
+        const current = getCurrentPhase();
+        const finalQuestion = sanitizeText(question);
+        if (!finalQuestion || runId !== state.matchRunId || !current || current.id !== phaseId || state.completed) return;
+        storeJudgeQuestionForPhase(phase, finalQuestion);
+        const answerTarget = getJudgeAnswerTargetForQuestionPhase(phase);
+        if (!answerTarget || !isAiControlledRole(answerTarget.speaker)) return;
+        void maybePrepareAiTurnForPhase(answerTarget).catch((error) => {
+            console.error("Early AI judge-answer preparation failed:", error);
+        });
+    })
+    .catch((error) => {
         console.error("AI judge-question revision failed:", error);
     });
 }
@@ -2877,6 +3253,34 @@ function prepareTimerForPhaseAnnouncement(phase) {
     timerHintEl.textContent = l("Waiting for the moderator to finish speaking.", "En attente de la fin du modérateur.");
 }
 
+function phaseTimerStartsWithAutoSpeech(phase) {
+    return PHASE_TIMER_POLICY.startsWithAutoSpeech(phase, {
+        speakerIsAiControlled: isAiControlledRole(phase?.speaker),
+        judgeMode: state.judgeMode
+    });
+}
+
+function phasePreloadsAutoSpeechDuringModerator(phase) {
+    return PHASE_TIMER_POLICY.preloadsDuringModerator(phase, {
+        speakerIsAiControlled: isAiControlledRole(phase?.speaker)
+    });
+}
+
+function phaseUsesNaturalModeratorHandoff(phase) {
+    return PHASE_TIMER_POLICY.usesNaturalModeratorHandoff(phase, {
+        speakerIsAiControlled: isAiControlledRole(phase?.speaker)
+    });
+}
+
+function prepareTimerForAutoSpeech(phase) {
+    prepareTimerForPhaseAnnouncement(phase);
+    if (!phase?.duration) return;
+    timerHintEl.textContent = l(
+        "Preparing speech audio. The timer will start when speaking begins.",
+        "Préparation de l’audio. La minuterie démarrera au début de la prise de parole."
+    );
+}
+
 function warningThresholdsForPhase(phase) {
     if (!phase) return [];
     if (phase.kind === "speech" && phase.subtype === "presentation") return [120, 60, 30];
@@ -2978,6 +3382,7 @@ function appendHumanTurnMessage(phase, text) {
     const cleanText = sanitizeText(text);
     if (!phase || !cleanText) return false;
     appendParticipantMessage("human", cleanText, { caseNum: phase.caseNum || 0, phaseId: phase.id });
+    primeAiFinalScoringAfterFinalTurn(phase);
     messageInputEl.value = "";
     return true;
 }
@@ -3043,6 +3448,7 @@ function getStopRecordingAndSubmitStatusText(phase) {
 
 function concludeTimedOutHumanPhase(expiredPhase) {
     if (!expiredPhase || state.completed) return;
+    primeAiFinalScoringAfterFinalTurn(expiredPhase);
     appendMessage("moderator", moderatorLabel(), l("Time.", "Temps."), {
         caseNum: expiredPhase.caseNum || 0,
             phaseId: expiredPhase.id || "",
@@ -3176,6 +3582,24 @@ function setTimerForPhase(phase) {
     }, 1000);
 }
 
+function startTimerWithAutoSpeech(phaseId, remainingReadyChecks = 3) {
+    const phase = getCurrentPhase();
+    if (!phase || phase.id !== phaseId || state.completed) return;
+    if (!state.phaseReady) {
+        if (remainingReadyChecks > 0) {
+            window.setTimeout(() => startTimerWithAutoSpeech(phaseId, remainingReadyChecks - 1), 0);
+        }
+        return;
+    }
+    if (!phaseTimerStartsWithAutoSpeech(phase) || state.timer.intervalId) return;
+    setTimerForPhase(phase);
+    timerHintEl.textContent = l(
+        "Timer started. Speech begins now.",
+        "La minuterie a démarré. La prise de parole commence maintenant."
+    );
+    refreshControls();
+}
+
 function pauseTimer() {
     if (!state.timer.intervalId || !state.timer.running) return;
     state.timer.running = false;
@@ -3199,6 +3623,12 @@ function resetPhaseTimer() {
     if (!state.phaseReady) {
         prepareTimerForPhaseAnnouncement(phase);
         setStatus(isFrenchLocale() ? `Minuterie réinitialisée pour ${phase.title}. Elle commencera quand le modérateur aura fini de parler.` : `Timer reset for ${phase.title}. It will start when the moderator finishes speaking.`);
+        refreshControls();
+        return;
+    }
+    if (phaseTimerStartsWithAutoSpeech(phase) && !state.timer.intervalId) {
+        prepareTimerForAutoSpeech(phase);
+        setStatus(isFrenchLocale() ? `Minuterie réinitialisée pour ${phase.title}. Elle démarrera au début de la prise de parole.` : `Timer reset for ${phase.title}. It will start when speech begins.`);
         refreshControls();
         return;
     }
@@ -3226,7 +3656,8 @@ function updateMatchSummaryPlaceholder() {
 
 function renderScorecards(cards, tally, sourceMode = "ai") {
     scoreCardsEl.innerHTML = "";
-    cards.forEach((card) => {
+    cards.forEach((card, index) => {
+        const judgeTally = tally.judges[index];
         const article = document.createElement("article");
         article.className = "score-card";
         const head = document.createElement("div");
@@ -3236,16 +3667,27 @@ function renderScorecards(cards, tally, sourceMode = "ai") {
         name.textContent = card.name || l("Judge", "Juge");
         const pill = document.createElement("span");
         pill.className = "score-pill";
-        if (card.humanScore > card.aiScore) pill.textContent = isFrenchLocale() ? `Vote pour ${speakerName("human")}` : `${speakerName("human")} vote`;
-        else if (card.aiScore > card.humanScore) pill.textContent = isFrenchLocale() ? `Vote pour ${speakerName("ai")}` : `${speakerName("ai")} vote`;
+        if (judgeTally.result === "human") pill.textContent = isFrenchLocale() ? `Vote pour ${speakerName("human")}` : `${speakerName("human")} vote`;
+        else if (judgeTally.result === "ai") pill.textContent = isFrenchLocale() ? `Vote pour ${speakerName("ai")}` : `${speakerName("ai")} vote`;
         else pill.textContent = l("Tie vote", "Vote nul");
         head.appendChild(name);
         head.appendChild(pill);
         const scores = document.createElement("div");
         scores.className = "score-note";
-        scores.textContent = `${speakerName("human")}: ${card.humanScore}/60 • ${speakerName("ai")}: ${card.aiScore}/60`;
+        scores.textContent = isFrenchLocale()
+        ? `Pointage du juge — ${speakerName("human")} : ${judgeTally.humanScore}/60 • ${speakerName("ai")} : ${judgeTally.aiScore}/60`
+        : `Judge tally — ${speakerName("human")}: ${judgeTally.humanScore}/60 • ${speakerName("ai")}: ${judgeTally.aiScore}/60`;
         article.appendChild(head);
         article.appendChild(scores);
+
+        if (card.comment) {
+            const judgeNote = document.createElement("div");
+            judgeNote.className = "score-note judge-score-comment";
+            judgeNote.textContent = isFrenchLocale()
+            ? `Commentaire du juge : ${card.comment}`
+            : `Judge comment: ${card.comment}`;
+            article.appendChild(judgeNote);
+        }
 
         if (card.humanBreakdown) {
             const humanBreakdownNote = document.createElement("div");
@@ -3254,6 +3696,7 @@ function renderScorecards(cards, tally, sourceMode = "ai") {
             ? `${speakerName("human")} — détail : ${formatOfficialParticipantBreakdown(card.humanBreakdown)}`
             : `${speakerName("human")} breakdown: ${formatOfficialParticipantBreakdown(card.humanBreakdown)}`;
             article.appendChild(humanBreakdownNote);
+            appendThresholdAuditDetails(article, speakerName("human"), card.humanBreakdown);
         }
         if (card.aiBreakdown) {
             const aiBreakdownNote = document.createElement("div");
@@ -3262,6 +3705,7 @@ function renderScorecards(cards, tally, sourceMode = "ai") {
             ? `${speakerName("ai")} — détail : ${formatOfficialParticipantBreakdown(card.aiBreakdown)}`
             : `${speakerName("ai")} breakdown: ${formatOfficialParticipantBreakdown(card.aiBreakdown)}`;
             article.appendChild(aiBreakdownNote);
+            appendThresholdAuditDetails(article, speakerName("ai"), card.aiBreakdown);
         }
         if (sourceMode === "ai") {
             if (card.humanComment) {
@@ -3276,11 +3720,6 @@ function renderScorecards(cards, tally, sourceMode = "ai") {
                 aiNote.textContent = `${speakerName("ai")}: ${card.aiComment}`;
                 article.appendChild(aiNote);
             }
-        } else if (card.comment) {
-            const genericNote = document.createElement("div");
-            genericNote.className = "score-note";
-            genericNote.textContent = card.comment;
-            article.appendChild(genericNote);
         }
         scoreCardsEl.appendChild(article);
     });
@@ -3297,20 +3736,7 @@ function renderScorecards(cards, tally, sourceMode = "ai") {
 }
 
 function computeVoteTally(cards) {
-    let humanVotes = 0;
-    let aiVotes = 0;
-    cards.forEach((card) => {
-        if (card.humanScore > card.aiScore) humanVotes += 1;
-        else if (card.aiScore > card.humanScore) aiVotes += 1;
-        else {
-            humanVotes += 0.5;
-            aiVotes += 0.5;
-        }
-    });
-    let result = "tie";
-    if (humanVotes > aiVotes) result = "human";
-    if (aiVotes > humanVotes) result = "ai";
-    return { humanVotes, aiVotes, result };
+    return SCORECARD_TALLY.computeVoteTally(cards);
 }
 
 function getAiBridge() {
@@ -3336,6 +3762,7 @@ async function callAI({
     systemPrompt,
     userPrompt,
     maxTokens = 800,
+    requestTimeoutMs = null,
     reasoningEffort = STUDENT_REASONING_EFFORT,
     jsonSchema = null
 }) {
@@ -3348,6 +3775,7 @@ async function callAI({
         systemPrompt: [HARDCODED_ETHICS_BOWL_RULES, localeDirectiveForModels(), systemPrompt].filter(Boolean).join("\n\n"),
         userPrompt: String(userPrompt || ""),
         maxTokens,
+        requestTimeoutMs,
         reasoningEffort,
         jsonSchema
     });
@@ -3467,21 +3895,31 @@ function buildAiJudgeSystemPrompt() {
     ].filter(Boolean).join("\n\n");
 }
 
-function buildAiScoringSystemPrompt(judgeNumber = null) {
-    const instructions = getStoredText(STORAGE_KEYS.instructions);
+function buildAiScoringSystemPrompt() {
     return [
-        judgeNumber
-        ? `You are Judge ${judgeNumber}, one neutral academic philosopher judge filling out one independent final score sheet.`
-        : "You are a neutral academic philosopher judge filling out one independent final score sheet.",
-        "Use careful ethical reasoning and apply the rubric strictly before assigning each numeric subscore.",
+        "You are one neutral academic philosopher judge filling out one independent final score sheet.",
+        "Every judge uses this same rubric, threshold procedure, and calibration. Do not invent a judge-specific philosophy, specialty, personality, or scoring standard.",
+        "Apply the rubric criterion by criterion before calculating totals or comparing participants.",
+        "Treat the lowest band as the default. Move upward one band at a time only when concrete transcript evidence fully establishes every requirement needed for the higher band and all preceding positive requirements.",
+        "Stop at the first higher band whose requirements are not fully established. Ambiguous, implied, partial, or absent evidence does not satisfy a threshold.",
+        "A score must fall within the highest band actually established. Do not give credit for qualities from a higher band when an earlier threshold is missing.",
+        "Reaching a band earns its minimum score by default. Award points above that minimum only for separately demonstrated strength within the band; do not confuse satisfying a threshold with earning the top of its range.",
+        "Within the highest bands, 4/5, 9/10, and 16/20 represent complete threshold satisfaction. A 5/5 or 10/10 requires exceptional completeness and consistency with no material weakness. For judges' questions, 17-18 is strong top-band work, 19 is rare and exceptional across every answer, and 20 requires an essentially flawless full questioning period.",
+        "For respectful dialogue, 5/5 requires repeated, concrete improvements to the participant's position across the match; one acknowledgment or revision ordinarily earns no more than 4/5.",
+        "Do not treat competent completion, fluent prose, confidence, length, or general sophistication as top-band performance. Top bands require affirmative evidence for every stated clause.",
+        "For each criterion, report concrete evidence, the strongest limitation found, whether that limitation is material, and the specific unmet requirement for the next band. For a fully satisfied top band, explicitly state that no higher threshold exists.",
+        "If hasMaterialLimitation is true in a top band, the highest defensible score is 4/5, 9/10, or 18/20 respectively. Mark it false only when close review finds no substantive weakness in that criterion.",
+        "After totaling, re-audit any score of 55/60 or higher. Retain every point above a band's minimum only when its own concrete evidence establishes exceptional within-band quality; general praise such as strong, polished, thoughtful, or sophisticated is not enough.",
+        "As a mathematical calibration check, 50/60 already means the participant reached the minimum of the highest band in all seven criteria. Scores of 55 or more therefore require exceptional performance across most criteria, and 58-60 must be reserved for a nearly flawless match. A card that identifies several substantive weaknesses is incompatible with such a total.",
+        "Do not aim for a customary total, balance the participants' totals, or inflate both scores because the match was generally strong.",
         "Use the exact hardcoded score-sheet categories and numeric ranges supplied by the app.",
         "Treat the transcript provided by the app as the source of truth for what was said.",
         "Work independently. Do not simulate a panel and do not return multiple judges in one answer.",
         "Return only valid JSON.",
         "Use whole-number scores only.",
         "Score Participant 1 and Participant 2 separately and fairly.",
-        "Do not reward or penalize either participant for being human-controlled or AI-controlled.",
-        instructions ? `Additional model instructions:\n${instructions}` : ""
+        "Give one overall comment explaining your own tally and vote, independently of the other judges.",
+        "Do not reward or penalize either participant for being human-controlled or AI-controlled."
     ].filter(Boolean).join("\n\n");
 }
 
@@ -3538,13 +3976,20 @@ function getJudgeQuestionForAnswerPhase(phase) {
 function storeJudgeQuestionForPhase(phase, question) {
     const clean = sanitizeText(question);
     if (!phase || phase.kind !== "judgeQuestion" || !clean) return;
+    const answerPhaseId = getJudgeAnswerPhaseId(phase.caseNum, phase.judgeNumber);
+    const previousQuestion = sanitizeText(
+        state.askedJudgeQuestions[answerPhaseId] ||
+        state.askedJudgeQuestions[phase.id] || ""
+    );
+    const questionChanged = previousQuestion !== clean;
     state.lastJudgeQuestionByCase[phase.caseNum] = clean;
     state.askedJudgeQuestions[phase.id] = clean;
-    const answerPhaseId = getJudgeAnswerPhaseId(phase.caseNum, phase.judgeNumber);
     state.askedJudgeQuestions[answerPhaseId] = clean;
-    delete state.aiPreparedTurns[answerPhaseId];
-    clearAiPreparationSnapshot(answerPhaseId);
-    delete state.aiPreparationErrors[answerPhaseId];
+    if (questionChanged) {
+        delete state.aiPreparedTurns[answerPhaseId];
+        clearAiPreparationSnapshot(answerPhaseId);
+        delete state.aiPreparationErrors[answerPhaseId];
+    }
     const prepKey = getAiJudgeQuestionPreparationKey(phase.caseNum, phase.judgeNumber);
     delete state.aiJudgeQuestionPreparationPromises[prepKey];
     delete state.aiJudgeQuestionPreparationErrors[prepKey];
@@ -4011,7 +4456,7 @@ async function enforceDirectJudgeAnswer(phase, draftText) {
         model: getParticipantModel(phase.speaker),
                                                   systemPrompt: buildAiDebaterSystemPrompt(phase.speaker),
                                                   userPrompt: prompt,
-                                                  maxTokens: 1200
+                                                  maxTokens: getAiTurnMaxOutputTokens(phase)
     }));
     return revised || draft;
 }
@@ -4068,20 +4513,24 @@ async function handleAiConferPhase(phase) {
     }
 }
 
-async function generateAiTurnForPhase(phase) {
+async function generateAiTurnForPhase(phase, options = {}) {
     const phaseId = phase?.id || "";
     if (!phaseId) return false;
+    const duringModerator = options.duringModerator === true;
     const speaker = speakerName(phase.speaker);
     const hasPrepared = !!getPreparedAiTurnText(phaseId);
     const hasPendingPreparation = !!state.aiPreparationPromises[phaseId];
-    setBusy(true);
-    setStatus(
-        hasPrepared
-        ? isFrenchLocale() ? `${speaker} est prêt.` : `${speaker}'s ${phase.subtype || "answer"} is ready.`
-        : hasPendingPreparation
-        ? isFrenchLocale() ? `Finalisation du texte préparé de ${speaker}...` : `Finishing ${speaker}'s prepared ${phase.subtype || "answer"}...`
-        : isFrenchLocale() ? `Génération du texte de ${speaker}...` : `Generating ${speaker}'s ${phase.subtype || "answer"}...`
-    );
+    if (duringModerator) setPhaseAwaitingPlayback(phaseId);
+    if (!duringModerator) {
+        setBusy(true);
+        setStatus(
+            hasPrepared
+            ? isFrenchLocale() ? `${speaker} est prêt.` : `${speaker}'s ${phase.subtype || "answer"} is ready.`
+            : hasPendingPreparation
+            ? isFrenchLocale() ? `Finalisation du texte préparé de ${speaker}...` : `Finishing ${speaker}'s prepared ${phase.subtype || "answer"}...`
+            : isFrenchLocale() ? `Génération du texte de ${speaker}...` : `Generating ${speaker}'s ${phase.subtype || "answer"}...`
+        );
+    }
     try {
         const text = sanitizeText(await maybePrepareAiTurnForPhase(phase));
         if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
@@ -4096,6 +4545,13 @@ async function generateAiTurnForPhase(phase) {
         appendParticipantMessage(phase.speaker, text, {
             caseNum: phase.caseNum,
                 phaseId,
+                hiddenUntilPhaseReady: duringModerator && !state.phaseReady,
+                onPlaybackStart: () => {
+                    startTimerWithAutoSpeech(phaseId);
+                    primeAiFinalScoringAfterFinalTurn(phase);
+                },
+                minimumHandoffGapMs: phaseUsesNaturalModeratorHandoff(phase) ? PARTICIPANT_SPEECH_HANDOFF_GAP_MS : 0,
+                speechStartLeadMs: TIMED_SPEECH_TIMER_LEAD_MS,
                 onPlaybackComplete: () => {
                     const activePhase = getCurrentPhase();
                     if (!activePhase || activePhase.id !== phaseId || state.completed) return;
@@ -4104,7 +4560,7 @@ async function generateAiTurnForPhase(phase) {
                     advancePhase();
                 }
         });
-        setStatus(isFrenchLocale() ? `${speaker} a terminé.` : `${speaker} has finished.`);
+        if (!duringModerator) setStatus(isFrenchLocale() ? `${speaker} a terminé.` : `${speaker} has finished.`);
         return true;
     } catch (error) {
         console.error(error);
@@ -4113,8 +4569,14 @@ async function generateAiTurnForPhase(phase) {
         setStatus(error?.message || l("Failed to generate the AI turn.", "La génération du tour IA a échoué."), true);
         return false;
     } finally {
-        setBusy(false);
+        if (!duringModerator) setBusy(false);
     }
+}
+
+function primeAiSpeechPlaybackDuringModerator(phase) {
+    if (!phasePreloadsAutoSpeechDuringModerator(phase) || state.completed) return;
+    if (isCurrentPhaseAwaitingPlayback(phase)) return;
+    void generateAiTurnForPhase(phase, { duringModerator: true });
 }
 
 async function askAiJudgeQuestion(phase) {
@@ -4148,6 +4610,10 @@ async function askAiJudgeQuestion(phase) {
             caseNum: phase.caseNum,
                 phaseId,
                 judgeNumber: phase.judgeNumber,
+                onPlaybackStart: () => {
+                    startTimerWithAutoSpeech(phaseId);
+                },
+                speechStartLeadMs: TIMED_SPEECH_TIMER_LEAD_MS,
                 onPlaybackComplete: () => {
                     const activePhase = getCurrentPhase();
                     if (!activePhase || activePhase.id !== phaseId || state.completed) return;
@@ -4176,39 +4642,42 @@ async function askAiJudgeQuestion(phase) {
 }
 
 function normalizeIntegerScore(value) {
-    const n = Math.round(Number(value));
-    if (!Number.isFinite(n)) return null;
-    return Math.max(0, Math.min(60, n));
-}
-
-function normalizeIntegerScoreInRange(value, min, max) {
-    const n = Math.round(Number(value));
-    if (!Number.isFinite(n)) return null;
-    return Math.max(min, Math.min(max, n));
+    return SCORECARD_TALLY.normalizeWholeNumberInRange(value, 0, 60);
 }
 
 function normalizeOfficialParticipantBreakdown(raw) {
     if (!raw || typeof raw !== "object") return null;
-    const breakdown = {
-        presentationQuestion: normalizeIntegerScoreInRange(raw.presentationQuestion, 1, 5),
-        presentationEthics: normalizeIntegerScoreInRange(raw.presentationEthics, 1, 5),
-        presentationViewpoints: normalizeIntegerScoreInRange(raw.presentationViewpoints, 1, 5),
-        responseToFeedback: normalizeIntegerScoreInRange(raw.responseToFeedback, 0, 10),
-        judgesQuestions: normalizeIntegerScoreInRange(raw.judgesQuestions, 0, 20),
-        commentary: normalizeIntegerScoreInRange(raw.commentary, 0, 10),
-        respectfulDialogue: normalizeIntegerScoreInRange(raw.respectfulDialogue, 0, 5),
-        comment: sanitizeText(raw.comment)
-    };
-    const requiredKeys = [
-        "presentationQuestion", "presentationEthics", "presentationViewpoints",
-        "responseToFeedback", "judgesQuestions", "commentary", "respectfulDialogue"
-    ];
-    return requiredKeys.every((key) => breakdown[key] != null) ? breakdown : null;
+    const breakdown = { comment: sanitizeText(raw.comment), thresholdAudit: {} };
+    for (const criterionKey of OFFICIAL_SCORE_CRITERION_KEYS) {
+        const audit = SCORECARD_TALLY.normalizeThresholdAudit(raw[criterionKey], criterionKey);
+        if (!audit) return null;
+        breakdown[criterionKey] = audit.score;
+        breakdown.thresholdAudit[criterionKey] = audit;
+    }
+    return breakdown;
 }
 
 function totalOfficialParticipantBreakdown(breakdown) {
-    if (!breakdown) return null;
-    return breakdown.presentationQuestion + breakdown.presentationEthics + breakdown.presentationViewpoints + breakdown.responseToFeedback + breakdown.judgesQuestions + breakdown.commentary + breakdown.respectfulDialogue;
+    return SCORECARD_TALLY.totalOfficialParticipantBreakdown(breakdown);
+}
+
+function officialScoreCriterionLabel(criterionKey) {
+    const labels = {
+        presentationQuestion: l("Presentation: clarity and coherence", "Présentation : clarté et cohérence"),
+        presentationEthics: l("Presentation: moral dynamics", "Présentation : dynamique morale"),
+        presentationViewpoints: l("Presentation: competing viewpoints", "Présentation : points de vue opposés"),
+        responseToFeedback: l("Response to feedback", "Réponse aux commentaires"),
+        judgesQuestions: l("Responses to judges' questions", "Réponses aux questions des juges"),
+        commentary: l("Commentary", "Commentaire"),
+        respectfulDialogue: l("Respectful dialogue", "Dialogue respectueux")
+    };
+    return labels[criterionKey] || criterionKey;
+}
+
+function formatOfficialCriterionScore(breakdown, criterionKey) {
+    const score = breakdown?.[criterionKey];
+    const maximum = SCORECARD_TALLY.OFFICIAL_BREAKDOWN_RANGES[criterionKey]?.[1] ?? 0;
+    return `${score}/${maximum}`;
 }
 
 function formatOfficialParticipantBreakdown(breakdown) {
@@ -4217,29 +4686,51 @@ function formatOfficialParticipantBreakdown(breakdown) {
     if (isFrenchLocale()) {
         return [
             `Présentation ${presentationTotal}/15`,
-            `(${breakdown.presentationQuestion}/5 clarté/cohérence, ${breakdown.presentationEthics}/5 éthique, ${breakdown.presentationViewpoints}/5 points de vue)`,
-            `Réponse aux commentaires ${breakdown.responseToFeedback}/10`,
-            `Réponses aux juges ${breakdown.judgesQuestions}/20`,
-            `Commentaire ${breakdown.commentary}/10`,
-            `Dialogue respectueux ${breakdown.respectfulDialogue}/5`
+            `(${formatOfficialCriterionScore(breakdown, "presentationQuestion")} clarté/cohérence, ${formatOfficialCriterionScore(breakdown, "presentationEthics")} éthique, ${formatOfficialCriterionScore(breakdown, "presentationViewpoints")} points de vue)`,
+            `Réponse aux commentaires ${formatOfficialCriterionScore(breakdown, "responseToFeedback")}`,
+            `Réponses aux juges ${formatOfficialCriterionScore(breakdown, "judgesQuestions")}`,
+            `Commentaire ${formatOfficialCriterionScore(breakdown, "commentary")}`,
+            `Dialogue respectueux ${formatOfficialCriterionScore(breakdown, "respectfulDialogue")}`
         ].join(" • ");
     }
     return [
         `Presentation ${presentationTotal}/15`,
-        `(${breakdown.presentationQuestion}/5 clear/coherent, ${breakdown.presentationEthics}/5 ethics, ${breakdown.presentationViewpoints}/5 viewpoints)`,
-        `Response to feedback ${breakdown.responseToFeedback}/10`,
-        `Judges' questions ${breakdown.judgesQuestions}/20`,
-        `Commentary ${breakdown.commentary}/10`,
-        `Respectful dialogue ${breakdown.respectfulDialogue}/5`
+        `(${formatOfficialCriterionScore(breakdown, "presentationQuestion")} clear/coherent, ${formatOfficialCriterionScore(breakdown, "presentationEthics")} ethics, ${formatOfficialCriterionScore(breakdown, "presentationViewpoints")} viewpoints)`,
+        `Response to feedback ${formatOfficialCriterionScore(breakdown, "responseToFeedback")}`,
+        `Judges' questions ${formatOfficialCriterionScore(breakdown, "judgesQuestions")}`,
+        `Commentary ${formatOfficialCriterionScore(breakdown, "commentary")}`,
+        `Respectful dialogue ${formatOfficialCriterionScore(breakdown, "respectfulDialogue")}`
     ].join(" • ");
 }
 
-function buildAiSingleJudgeScoringPrompt(judgeNumber, scoringTranscript) {
+function appendThresholdAuditDetails(article, participantName, breakdown) {
+    if (!article || !breakdown?.thresholdAudit) return;
+    const details = document.createElement("details");
+    details.className = "score-note threshold-audit";
+    const summary = document.createElement("summary");
+    summary.textContent = isFrenchLocale()
+        ? `Vérification des paliers — ${participantName}`
+        : `${participantName} threshold audit`;
+    details.appendChild(summary);
+    OFFICIAL_SCORE_CRITERION_KEYS.forEach((criterionKey) => {
+        const audit = breakdown.thresholdAudit[criterionKey];
+        if (!audit) return;
+        const line = document.createElement("div");
+        line.className = "score-note threshold-audit-line";
+        line.textContent = isFrenchLocale()
+            ? `${officialScoreCriterionLabel(criterionKey)} — ${formatOfficialCriterionScore(breakdown, criterionKey)}. Preuve : ${audit.evidence} Limite : ${audit.limitation} Palier suivant : ${audit.unmetNextThreshold}`
+            : `${officialScoreCriterionLabel(criterionKey)} — ${formatOfficialCriterionScore(breakdown, criterionKey)}. Evidence: ${audit.evidence} Limitation: ${audit.limitation} Next threshold: ${audit.unmetNextThreshold}`;
+        details.appendChild(line);
+    });
+    article.appendChild(details);
+}
+
+function buildAiSingleJudgeScoringPrompt(scoringTranscript) {
     const participantOneLedCase = state.leadByCase[1] === "human" ? 1 : 2;
     const participantTwoLedCase = state.leadByCase[1] === "ai" ? 1 : 2;
     return [
         `This is a completed Ethics Bowl-style match between Participant 1, "${speakerName("human")}", and Participant 2, "${speakerName("ai")}".`,
-        `You are Judge ${judgeNumber}. Complete exactly one independent final score sheet. Do not simulate the other judges or return a panel answer.`,
+        "Complete exactly one independent final score sheet. Do not simulate the other judges or return a panel answer.",
         `Participant 1 is ${participantControlSummary("human")}. Participant 2 is ${participantControlSummary("ai")}.`,
         "Score the arguments only. Do not reward or penalize a side for being human-controlled or AI-controlled.",
         OFFICIAL_SCORE_SHEET_TEXT.trim(),
@@ -4248,13 +4739,22 @@ function buildAiSingleJudgeScoringPrompt(judgeNumber, scoringTranscript) {
         `- For ${speakerName("ai")} (Participant 2), the presentation /15, response to feedback /10, and judges' questions /20 must be based only on Case #${participantTwoLedCase}.`,
         `- ${speakerName("human")}'s commentary /10 must be based on the case not led by ${speakerName("human")}.`,
         `- ${speakerName("ai")}'s commentary /10 must be based on the case not led by ${speakerName("ai")}.`,
+        "- For responses to judges' questions /20, examine every recorded judge answer on that participant's led case. Do not let one strong answer stand in for the full questioning period.",
         "- Respectful dialogue /5 is across the full match.",
+        "- Evaluate each criterion independently from the lowest band upward. Do not decide a total first and reverse-engineer subscores.",
+        "- For each criterion, highestSatisfiedBand must name the highest fully established rubric band, and score must be inside that exact band.",
+        "- Evidence must identify concrete content from the transcript that establishes the declared band; generic praise is insufficient.",
+        "- Limitation must identify the strongest concrete reason to withhold points, and hasMaterialLimitation must honestly distinguish a substantive weakness from a merely minor one.",
+        "- Start at the minimum score in the attained band. Add each further point only for exceptional strength supported by the evidence; reaching the band alone never earns its maximum.",
+        "- If hasMaterialLimitation is true in a top band, do not exceed 4/5, 9/10, or 18/20 for that criterion.",
+        "- UnmetNextThreshold must identify the next band's missing requirement. For an earned top band, state that no higher threshold exists and that every top-band requirement was established.",
+        "- Refinement requires an actual clarification, modification, qualification, or reasoned explanation that modification was unnecessary; merely adding detail is not automatically refinement.",
+        "- A perfect score requires complete and consistently strong evidence, not merely the absence of an obvious mistake.",
         "- Use whole numbers only.",
+        "- The top-level comment must briefly explain this judge's own tally and vote.",
         "- All participant turns and judge questions/answers below are exact stored transcript entries from the app, reproduced in full.",
-        "Return strict JSON exactly in this shape:",
-        `{"name":"Judge ${judgeNumber}","participantOne":{"presentationQuestion":4,"presentationEthics":4,"presentationViewpoints":4,"responseToFeedback":8,"judgesQuestions":16,"commentary":8,"respectfulDialogue":5,"comment":"..."},"participantTwo":{"presentationQuestion":4,"presentationEthics":5,"presentationViewpoints":4,"responseToFeedback":7,"judgesQuestions":17,"commentary":8,"respectfulDialogue":5,"comment":"..."}}`,
-        "Do not include markdown fences.",
-        "Each comment should be brief, concrete, and charitable.",
+        "Return only a scorecard matching the supplied strict JSON schema. Do not include markdown fences or additional fields.",
+        "Keep each evidence statement, limitation, unmet-threshold statement, and comment brief, concrete, and textually grounded.",
         `Substantive transcript of the full match:\n${scoringTranscript}`
     ].join("\n\n");
 }
@@ -4263,11 +4763,18 @@ function normalizeAiFinalJudgeScorecardResponse(rawJudge, judgeNumber) {
     const source = rawJudge && typeof rawJudge === "object" && !Array.isArray(rawJudge) ? rawJudge : null;
     const participantOneBreakdown = normalizeOfficialParticipantBreakdown(source?.participantOne);
     const participantTwoBreakdown = normalizeOfficialParticipantBreakdown(source?.participantTwo);
-    if (!participantOneBreakdown || !participantTwoBreakdown) throw new Error(l("AI judge did not return the full official score-sheet breakdown.", "Le juge IA n’a pas renvoyé le détail complet de la fiche officielle."));
+    if (!participantOneBreakdown || !participantTwoBreakdown) throw new Error(l(
+        "AI judge returned a missing or invalid score-sheet threshold audit.",
+        "Le juge IA a renvoyé une vérification des paliers manquante ou invalide."
+    ));
+    const comment = sanitizeText(source?.comment) || [participantOneBreakdown.comment, participantTwoBreakdown.comment].filter(Boolean).join(" ");
+    if (!comment) throw new Error(l("AI judge did not return its overall tally comment.", "Le juge IA n’a pas renvoyé son commentaire global sur le pointage."));
     return {
-        name: sanitizeText(source?.name) || judgeLabel(judgeNumber),
+        judgeNumber,
+        name: judgeLabel(judgeNumber),
         humanScore: totalOfficialParticipantBreakdown(participantOneBreakdown),
         aiScore: totalOfficialParticipantBreakdown(participantTwoBreakdown),
+        comment,
         humanComment: participantOneBreakdown.comment,
         aiComment: participantTwoBreakdown.comment,
         humanBreakdown: participantOneBreakdown,
@@ -4284,14 +4791,15 @@ async function maybePrepareAiFinalJudgeScorecard(judgeNumber, expectedRunId = st
         try {
             const scoringTranscript = scoringTranscriptAsPlainText();
             if (!sanitizeText(scoringTranscript)) throw new Error(l("No substantive transcript is available for final AI judging.", "Aucune transcription substantielle n’est disponible pour le jugement final IA."));
-            const prompt = buildAiSingleJudgeScoringPrompt(judgeNumber, scoringTranscript);
+            const prompt = buildAiSingleJudgeScoringPrompt(scoringTranscript);
             const parsed = await callAI({
                 model: getJudgeModel(),
-                                            systemPrompt: buildAiScoringSystemPrompt(judgeNumber),
-                                            userPrompt: prompt,
-                                            maxTokens: 3000,
-                                            reasoningEffort: JUDGE_REASONING_EFFORT,
-                                            jsonSchema: FINAL_JUDGE_SCORECARD_JSON_SCHEMA
+                systemPrompt: buildAiScoringSystemPrompt(),
+                userPrompt: prompt,
+                maxTokens: 6000,
+                requestTimeoutMs: FINAL_SCORECARD_REQUEST_TIMEOUT_MS,
+                reasoningEffort: JUDGE_REASONING_EFFORT,
+                jsonSchema: FINAL_JUDGE_SCORECARD_JSON_SCHEMA
             });
             const card = normalizeAiFinalJudgeScorecardResponse(parsed, judgeNumber);
             if (expectedRunId !== state.matchRunId) return null;
@@ -4299,7 +4807,11 @@ async function maybePrepareAiFinalJudgeScorecard(judgeNumber, expectedRunId = st
             delete state.aiFinalJudgeScoringErrors[judgeNumber];
             return card;
         } catch (error) {
-            if (expectedRunId === state.matchRunId) state.aiFinalJudgeScoringErrors[judgeNumber] = error?.message || isFrenchLocale() ? `La génération de la fiche finale du ${judgeLabel(judgeNumber)} a échoué.` : `Failed to generate Judge ${judgeNumber}'s final scorecard.`;
+            if (expectedRunId === state.matchRunId) {
+                state.aiFinalJudgeScoringErrors[judgeNumber] = error?.message || (isFrenchLocale()
+                    ? `La génération de la fiche finale du ${judgeLabel(judgeNumber)} a échoué.`
+                    : `Failed to generate Judge ${judgeNumber}'s final scorecard.`);
+            }
             throw error;
         } finally {
             if (state.aiFinalJudgeScoringPromises[judgeNumber] === trackedPromise) delete state.aiFinalJudgeScoringPromises[judgeNumber];
@@ -4316,6 +4828,23 @@ async function maybePrepareAllAiFinalScorecards(expectedRunId = state.matchRunId
         throw new Error(l("AI judges returned incomplete scores.", "Les juges IA ont renvoyé des notes incomplètes."));
     }
     return cards;
+}
+
+function getFinalSubstantivePhase() {
+    for (let index = state.phases.length - 1; index >= 0; index -= 1) {
+        const phase = state.phases[index];
+        if (["speech", "judgeQuestion", "judgeAnswer"].includes(phase?.kind)) return phase;
+    }
+    return null;
+}
+
+function primeAiFinalScoringAfterFinalTurn(phase) {
+    if (!phase || state.judgeMode !== "ai" || state.completed) return;
+    const finalSubstantivePhase = getFinalSubstantivePhase();
+    if (!finalSubstantivePhase || finalSubstantivePhase.id !== phase.id) return;
+    void maybePrepareAllAiFinalScorecards(state.matchRunId).catch((error) => {
+        console.error("Early AI final score preparation failed:", error);
+    });
 }
 
 function primeAiFinalScoringPreparationForPhase(phase) {
@@ -4351,10 +4880,11 @@ function collectHumanJudgeScorecards() {
         const aiScore = normalizeIntegerScore(judge.aiScore.value);
         if (humanScore == null || aiScore == null) throw new Error(l("Every human judge score must be a whole number between 0 and 60.", "Chaque note de juge humain doit être un nombre entier entre 0 et 60."));
         return {
+            judgeNumber: judge.number,
             name: sanitizeText(judge.name.value) || judgeLabel(judge.number),
-                           humanScore,
-                           aiScore,
-                           comment: sanitizeText(judge.comment.value)
+            humanScore,
+            aiScore,
+            comment: sanitizeText(judge.comment.value)
         };
     });
 }
@@ -4705,6 +5235,9 @@ function resetStateForNewMatch() {
     state.speechChunkCounts = new Map();
     state.speechStartCallbacks = new Map();
     state.speechCompletionCallbacks = new Map();
+    state.timingTestMessageModes = new Map();
+    state.timingTestMeasurements = new Map();
+    state.timingTestResults = [];
     state.participantTypes = {
         human: normalizeParticipantMode(participantOneTypeSelectEl?.value || "human"),
         ai: "ai"
@@ -4720,6 +5253,7 @@ function resetStateForNewMatch() {
     renderTranscript();
     renderPhaseList();
     clearScoreboard();
+    refreshTimingTestUi();
 }
 
 function fullReset() {
@@ -4894,8 +5428,8 @@ function phaseAnnouncementText(phase) {
     }
     if (phase.kind === "scoring") {
         return isFrenchLocale()
-        ? `Juges, veuillez maintenant attribuer le pointage du ${caseLabel(phase.caseNum)}. Le résultat final sera déterminé par les votes, et non seulement par le total cumulatif.`
-        : `Judges, please score Case #${phase.caseNum} now. The match result will later be determined by votes, not cumulative score alone.`;
+        ? `Juges, veuillez maintenant attribuer le pointage du ${caseLabel(phase.caseNum)}.`
+        : `Judges, please score Case #${phase.caseNum} now.`;
     }
     if (phase.kind === "closing") {
         return isFrenchLocale()
@@ -4919,8 +5453,10 @@ function activatePhaseAfterModerator(phaseId) {
     const phase = getCurrentPhase();
     if (!phase || phase.id !== phaseId || state.completed) return;
     state.phaseReady = true;
+    revealTranscriptMessagesForPhase(phaseId);
     if (phase.duration) {
-        setTimerForPhase(phase);
+        if (phaseTimerStartsWithAutoSpeech(phase)) prepareTimerForAutoSpeech(phase);
+        else setTimerForPhase(phase);
     } else {
         timerDisplayEl.textContent = "--:--";
         if (phase.kind === "closing") {
@@ -4959,6 +5495,9 @@ function enterCurrentPhase() {
     appendMessage("moderator", moderatorLabel(), phaseAnnouncementText(phase), {
         caseNum: phase.caseNum || 0,
             phaseId: phase.id,
+            onPlaybackStart: () => {
+                primeAiSpeechPlaybackDuringModerator(phase);
+            },
             onPlaybackComplete: () => {
                 if (phase.kind === "moderatorCase" && state.currentPhaseIndex === 0) {
                     state.showCoinTossCeremony = false;
@@ -5108,9 +5647,14 @@ function refreshControls() {
 
     const hasTimedPhase = !!phase?.duration;
     const timerExists = !!state.timer.intervalId;
-    pauseTimerBtnEl.disabled = !hasTimedPhase || !state.phaseReady || !timerExists || !state.timer.running;
-    resumeTimerBtnEl.disabled = !hasTimedPhase || !state.phaseReady || !timerExists || state.timer.running || state.timer.remaining <= 0;
-    resetTimerBtnEl.disabled = !hasTimedPhase || !state.phaseReady;
+    const aiVsAiMatch = isAiControlledRole("human") && isAiControlledRole("ai");
+    if (timerControlButtonsEl) {
+        timerControlButtonsEl.hidden = aiVsAiMatch;
+        timerControlButtonsEl.style.display = aiVsAiMatch ? "none" : "";
+    }
+    pauseTimerBtnEl.disabled = aiVsAiMatch || !hasTimedPhase || !state.phaseReady || !timerExists || !state.timer.running;
+    resumeTimerBtnEl.disabled = aiVsAiMatch || !hasTimedPhase || !state.phaseReady || !timerExists || state.timer.running || state.timer.remaining <= 0;
+    resetTimerBtnEl.disabled = aiVsAiMatch || !hasTimedPhase || !state.phaseReady;
 
     if (state.coinTossAnimating) {
         nextActionBtnEl.textContent = l("Coin Toss Running", "Tirage en cours");
@@ -5296,6 +5840,7 @@ function applyLocaleToUi() {
     refreshControls();
     updateConfigBadges();
     updateApiKeyUi();
+    refreshTimingTestUi();
 }
 
 startMatchBtnEl.addEventListener("click", () => { void startMatch(); });
@@ -5307,6 +5852,7 @@ passBtnEl.addEventListener("click", () => handleHumanCoinChoice("pass"));
 pauseTimerBtnEl.addEventListener("click", pauseTimer);
 resumeTimerBtnEl.addEventListener("click", resumeTimer);
 resetTimerBtnEl.addEventListener("click", resetPhaseTimer);
+timingFastForwardBtnEl?.addEventListener("click", toggleTimingTestFastForward);
 
 composerFormEl.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -5437,9 +5983,28 @@ async function initializeCredentialState() {
     }
     try {
         await refreshCredentialStatus({ force: true });
-        if (!state.started && !state.completed) setStatus(l("Ready.", "Prêt."));
+        const credentialLoadingStatus = l(
+            "Checking AI provider credentials...",
+            "Vérification des identifiants des fournisseurs IA..."
+        );
+        if (
+            !state.liveScreenActive
+            && !state.started
+            && !state.completed
+            && sanitizeText(statusLineEl.textContent) === credentialLoadingStatus
+        ) {
+            setStatus(l("Ready.", "Prêt."));
+        }
         refreshControls();
         await maybeShowInitialApiKeyDialog();
+        if (
+            TIMING_TEST_AUTO_START
+            && !state.liveScreenActive
+            && !state.started
+            && !state.completed
+        ) {
+            await startMatch();
+        }
     } catch (error) {
         const detail = safeBridgeErrorMessage(error);
         setStatus(l(
@@ -5457,5 +6022,6 @@ fullReset();
 applyLocaleToUi();
 updateConfigBadges();
 updateApiKeyUi();
+refreshTimingTestUi();
 refreshControls();
 void initializeCredentialState();

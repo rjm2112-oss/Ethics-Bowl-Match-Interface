@@ -2,7 +2,11 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { loadCredentialEnvironment, parseEnvFile } = require("../src/main/env");
+const {
+    loadCredentialEnvironment,
+    parseEnvFile,
+    resolveCredentialFilePath
+} = require("../src/main/env");
 
 test("parseEnvFile reads only supported credentials without evaluating content", () => {
     const parsed = parseEnvFile([
@@ -39,4 +43,25 @@ test("a missing development credential file is harmless", () => {
         }
     });
     assert.deepEqual(result, { openai: "", anthropic: "" });
+});
+
+test("a packaged AppImage uses a .env file beside the AppImage", () => {
+    assert.equal(resolveCredentialFilePath({
+        isPackaged: true,
+        appDirectory: "/packaged/app",
+        appImagePath: "  /home/user/apps/Ethics Bowl Match.AppImage  "
+    }), "/home/user/apps/.env");
+});
+
+test("credential file resolution preserves safe development and packaged defaults", () => {
+    assert.equal(resolveCredentialFilePath({
+        isPackaged: false,
+        appDirectory: "/development/app",
+        appImagePath: ""
+    }), "/development/app/.env.local");
+    assert.equal(resolveCredentialFilePath({
+        isPackaged: true,
+        appDirectory: "/packaged/app",
+        appImagePath: ""
+    }), null);
 });

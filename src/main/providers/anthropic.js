@@ -58,7 +58,7 @@ function createAnthropicAdapter({ fetchImpl = globalThis.fetch, sleep = defaultS
             body,
             retryStatuses: RETRY_STATUSES,
             sleep,
-            requestTimeoutMs
+            requestTimeoutMs: request.requestTimeoutMs || requestTimeoutMs
         });
         if (!response.ok) throw await createApiError(response);
 
@@ -69,8 +69,7 @@ function createAnthropicAdapter({ fetchImpl = globalThis.fetch, sleep = defaultS
             if (allowOutputBudgetRecovery) {
                 return generate({
                     ...request,
-                    maxTokens: Math.min(12000, Math.max(request.maxTokens + 1200, Math.round(request.maxTokens * 1.5))),
-                    reasoningEffort: "low"
+                    maxTokens: Math.min(12000, Math.max(request.maxTokens + 1200, Math.round(request.maxTokens * 1.5)))
                 }, apiKey, false);
             }
             throw new Error("The model reached its output-token limit before completing the response.");

@@ -10,10 +10,20 @@ const REASONING_EFFORTS_BY_MODEL = Object.freeze({
     "claude-fable-5": new Set(["low", "medium", "high", "xhigh", "max"]),
     "claude-sonnet-5": new Set(["low", "medium", "high", "xhigh", "max"])
 });
-const SPEECH_MODELS = new Set([modelCatalog.AUDIO_MODELS.speech]);
+const SPEECH_MODELS = new Set([
+    modelCatalog.AUDIO_MODELS.speech,
+    modelCatalog.AUDIO_MODELS.moderatorSpeech
+]);
+const SPEECH_VOICES_BY_MODEL = new Map([
+    [modelCatalog.AUDIO_MODELS.speech, new Set(["alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"])],
+    [modelCatalog.AUDIO_MODELS.moderatorSpeech, new Set(["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"])]
+]);
+const INSTRUCTION_CAPABLE_SPEECH_MODELS = new Set([modelCatalog.AUDIO_MODELS.moderatorSpeech]);
 const TRANSCRIPTION_MODELS = new Set([modelCatalog.AUDIO_MODELS.finalTranscription]);
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const AUDIO_MIME_PATTERN = /^(?:audio\/(?:webm|ogg|mpeg|mp3|mp4|wav|x-wav|m4a|x-m4a))(?:\s*;.*)?$/i;
+const DEFAULT_GENERATE_REQUEST_TIMEOUT_MS = 90000;
+const MAX_GENERATE_REQUEST_TIMEOUT_MS = 300000;
 
 function isPlainObject(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -88,13 +98,19 @@ function validateGenerateRequest(payload) {
             throw new Error("That reasoning effort is not supported by the selected model.");
         }
     }
-
     return {
         provider: catalogModel.provider,
         model: catalogModel.id,
         systemPrompt: boundedString(request.systemPrompt, "System prompt", { maxLength: 150000 }),
         userPrompt: boundedString(request.userPrompt, "User prompt", { required: true, maxLength: 500000 }),
         maxTokens: boundedInteger(request.maxTokens, "Output limit", 800, 1, 12000),
+        requestTimeoutMs: boundedInteger(
+            request.requestTimeoutMs,
+            "Request timeout",
+            DEFAULT_GENERATE_REQUEST_TIMEOUT_MS,
+            1000,
+            MAX_GENERATE_REQUEST_TIMEOUT_MS
+        ),
         reasoningEffort,
         jsonSchema: validateJsonSchema(request.jsonSchema)
     };
@@ -108,6 +124,11 @@ function validateSpeechRequest(payload) {
     if (responseFormat !== "mp3") throw new Error("Only MP3 speech output is supported.");
     const voice = boundedString(request.voice || "alloy", "Voice", { required: true, maxLength: 32 }).toLowerCase();
     if (!/^[a-z][a-z0-9_-]*$/.test(voice)) throw new Error("The speech voice is not valid.");
+    if (!SPEECH_VOICES_BY_MODEL.get(model)?.has(voice)) throw new Error("That voice is not supported by the selected speech model.");
+    const instructions = boundedString(request.instructions, "Speech instructions", { maxLength: 1000 });
+    if (instructions && !INSTRUCTION_CAPABLE_SPEECH_MODELS.has(model)) {
+        throw new Error("That speech model does not support voice instructions.");
+    }
     let speed;
     if (request.speed != null) {
         speed = Number(request.speed);
@@ -118,6 +139,7 @@ function validateSpeechRequest(payload) {
         input: boundedString(request.input, "Speech text", { required: true, maxLength: 4096 }),
         voice,
         responseFormat,
+        ...(instructions ? { instructions } : {}),
         ...(speed == null ? {} : { speed })
     };
 }
@@ -165,7 +187,9 @@ function validateTranscriptionRequest(payload) {
 }
 
 module.exports = {
+    DEFAULT_GENERATE_REQUEST_TIMEOUT_MS,
     MAX_AUDIO_BYTES,
+    MAX_GENERATE_REQUEST_TIMEOUT_MS,
     PROVIDERS,
     SPEECH_MODELS,
     TRANSCRIPTION_MODELS,

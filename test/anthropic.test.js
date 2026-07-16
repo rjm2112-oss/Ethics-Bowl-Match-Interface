@@ -104,7 +104,7 @@ test("Anthropic surfaces refusal and output-limit stop reasons clearly", async (
     await assert.rejects(limited.generate(request(), "anthropic-test-value"), /output-token limit/);
 });
 
-test("Anthropic retries one output-budget failure with more tokens and low effort", async () => {
+test("Anthropic retries one output-budget failure with more tokens and unchanged effort", async () => {
     const bodies = [];
     const adapter = createAnthropicAdapter({
         fetchImpl: async (_url, options) => {
@@ -118,5 +118,21 @@ test("Anthropic retries one output-budget failure with more tokens and low effor
     assert.equal(await adapter.generate(request({ maxTokens: 1200 }), "anthropic-test-value"), "Recovered.");
     assert.equal(bodies.length, 2);
     assert.equal(bodies[1].max_tokens, 2400);
-    assert.equal(bodies[1].output_config.effort, "low");
+    assert.equal(bodies[1].output_config.effort, "high");
+});
+
+test("Anthropic generation honors a per-request timeout", async () => {
+    const adapter = createAnthropicAdapter({
+        fetchImpl: async (_url, options) => new Promise((_, reject) => {
+            options.signal.addEventListener("abort", () => {
+                const error = new Error("aborted");
+                error.name = "AbortError";
+                reject(error);
+            }, { once: true });
+        }),
+        sleep: async () => {},
+        requestTimeoutMs: 1000
+    });
+
+    await assert.rejects(adapter.generate(request({ requestTimeoutMs: 5 }), "anthropic-test-value"), /timed out/);
 });

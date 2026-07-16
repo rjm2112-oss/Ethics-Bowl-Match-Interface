@@ -4,12 +4,14 @@ const { app, BrowserWindow, ipcMain, safeStorage, session } = require("electron"
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { CredentialStore } = require("./src/main/credential-store");
-const { loadCredentialEnvironment } = require("./src/main/env");
+const { loadCredentialEnvironment, resolveCredentialFilePath } = require("./src/main/env");
 const { createSenderValidator, registerIpcHandlers } = require("./src/main/ipc");
 const { createProviderService } = require("./src/main/provider-service");
 
 const RENDERER_FILE = path.join(__dirname, "debater.html");
 const RENDERER_URL = pathToFileURL(RENDERER_FILE).href;
+const TIMING_TEST_MODE = process.argv.includes("--timing-test");
+const TIMING_TEST_AUTO_START = TIMING_TEST_MODE && process.argv.includes("--auto-start");
 const ALLOWED_NAVIGATION_URLS = new Set([
     RENDERER_FILE,
     path.join(__dirname, "instructions.html")
@@ -88,17 +90,32 @@ function createWindow() {
         if (!ALLOWED_NAVIGATION_URLS.has(normalizedTarget)) event.preventDefault();
     });
     win.webContents.on("will-attach-webview", (event) => event.preventDefault());
+    if (TIMING_TEST_MODE) {
+        win.webContents.on("console-message", (event) => {
+            const message = String(event?.message || "");
+            if (message.startsWith("[timing-test-result]")) console.log(message);
+        });
+    }
     win.on("closed", () => {
         if (mainWindow === win) mainWindow = null;
     });
 
-    void win.loadFile(RENDERER_FILE);
+    void win.loadFile(RENDERER_FILE, TIMING_TEST_MODE
+        ? { query: {
+            timingTest: "1",
+            ...(TIMING_TEST_AUTO_START ? { autoStart: "1" } : {})
+        } }
+        : undefined);
     return win;
 }
 
 app.whenReady().then(() => {
     const environment = loadCredentialEnvironment({
-        filePath: app.isPackaged ? null : path.join(__dirname, ".env.local"),
+        filePath: resolveCredentialFilePath({
+            isPackaged: app.isPackaged,
+            appDirectory: __dirname,
+            appImagePath: process.env.APPIMAGE
+        }),
         environment: process.env
     });
     const credentialStore = new CredentialStore({
