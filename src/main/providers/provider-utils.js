@@ -49,7 +49,16 @@ function retryDelayMs(attempt, response) {
     return Math.min(1600, 350 * (2 ** Math.max(0, attempt - 1)));
 }
 
-async function fetchWithRetries({ fetchImpl, url, makeOptions, retryStatuses, sleep, maxAttempts = 3, requestTimeoutMs = 90000 }) {
+async function fetchWithRetries({
+    fetchImpl,
+    url,
+    makeOptions,
+    retryStatuses,
+    sleep,
+    maxAttempts = 3,
+    requestTimeoutMs = 90000,
+    consumeResponse = null
+}) {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         let response;
         let timedOut = false;
@@ -62,31 +71,53 @@ async function fetchWithRetries({ fetchImpl, url, makeOptions, retryStatuses, sl
                 controller.abort();
             }, requestTimeoutMs);
             timeoutId.unref?.();
-            response = await fetchImpl(url, { ...options, signal: controller.signal });
-        } catch (error) {
-            if (timedOut) throw new Error("The AI provider request timed out. Try again.");
-            if (!isRetryableNetworkError(error) || attempt >= maxAttempts) {
-                throw new Error("The AI provider could not be reached.");
+
+            try {
+                response = await fetchImpl(url, { ...options, signal: controller.signal });
+            } catch (error) {
+                if (timedOut) throw new Error("The AI provider request timed out. Try again.");
+                if (!isRetryableNetworkError(error) || attempt >= maxAttempts) {
+                    throw new Error("The AI provider could not be reached.");
+                }
+                await sleep(retryDelayMs(attempt));
+                continue;
             }
-            await sleep(retryDelayMs(attempt));
-            continue;
+
+            if (!response || typeof response.ok !== "boolean") throw new Error("The AI provider returned an invalid response.");
+            if (!response.ok && retryStatuses.has(Number(response.status)) && attempt < maxAttempts) {
+                const delay = retryDelayMs(attempt, response);
+                try { await response.arrayBuffer(); } catch {}
+                await sleep(delay);
+                continue;
+            }
+            if (typeof consumeResponse !== "function") return response;
+
+            try {
+                return await consumeResponse(response);
+            } catch (error) {
+                if (timedOut) throw new Error("The AI provider request timed out. Try again.");
+                if (!isRetryableNetworkError(error)) throw error;
+                if (attempt >= maxAttempts) throw new Error("The AI provider response was interrupted.");
+                await sleep(retryDelayMs(attempt));
+            }
         } finally {
             if (timeoutId) clearTimeout(timeoutId);
         }
-
-        if (!response || typeof response.ok !== "boolean") throw new Error("The AI provider returned an invalid response.");
-        if (!response.ok && retryStatuses.has(Number(response.status)) && attempt < maxAttempts) {
-            const delay = retryDelayMs(attempt, response);
-            try { await response.arrayBuffer(); } catch {}
-            await sleep(delay);
-            continue;
-        }
-        return response;
     }
     throw new Error("The AI provider request failed.");
 }
 
-async function postJsonWithRetries({ fetchImpl, url, headers, body, retryStatuses, sleep, maxAttempts = 3, requestTimeoutMs }) {
+async function postJsonWithRetries({
+    fetchImpl,
+    url,
+    headers,
+    body,
+    retryStatuses,
+    sleep,
+    maxAttempts = 3,
+    requestTimeoutMs,
+    consumeResponse = null
+}) {
     return fetchWithRetries({
         fetchImpl,
         url,
@@ -98,7 +129,8 @@ async function postJsonWithRetries({ fetchImpl, url, headers, body, retryStatuse
         retryStatuses,
         sleep,
         maxAttempts,
-        requestTimeoutMs
+        requestTimeoutMs,
+        consumeResponse
     });
 }
 

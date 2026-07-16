@@ -149,22 +149,24 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
         };
         if (request.instructions) body.instructions = request.instructions;
         if (request.speed != null) body.speed = request.speed;
-        const response = await postJsonWithRetries({
+        return postJsonWithRetries({
             fetchImpl,
             url: SPEECH_URL,
             headers: { Authorization: `Bearer ${apiKey}` },
             body,
             retryStatuses: RETRY_STATUSES,
             sleep,
-            requestTimeoutMs
+            requestTimeoutMs,
+            consumeResponse: async (response) => {
+                if (!response.ok) throw await createApiError(response);
+                const buffer = await response.arrayBuffer();
+                if (!buffer.byteLength) throw new Error("The AI provider returned empty speech audio.");
+                return {
+                    bytes: new Uint8Array(buffer),
+                    mimeType: response.headers?.get?.("content-type") || "audio/mpeg"
+                };
+            }
         });
-        if (!response.ok) throw await createApiError(response);
-        const buffer = await response.arrayBuffer();
-        if (!buffer.byteLength) throw new Error("The AI provider returned empty speech audio.");
-        return {
-            bytes: new Uint8Array(buffer),
-            mimeType: response.headers?.get?.("content-type") || "audio/mpeg"
-        };
     }
 
     async function transcribe(request, apiKey) {

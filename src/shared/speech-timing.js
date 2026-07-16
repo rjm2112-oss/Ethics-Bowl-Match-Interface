@@ -47,5 +47,35 @@
             && message?.kind !== "moderator";
     }
 
-    return Object.freeze({ isTimedSpokenPhase, shouldReportTimedMessage, summarizeTimedSpeech });
+    async function mapWithConcurrency(items, maxConcurrency, worker) {
+        const values = Array.from(items || []);
+        if (typeof worker !== "function") throw new TypeError("A concurrency worker is required.");
+        if (!values.length) return [];
+
+        const requestedConcurrency = Math.floor(Number(maxConcurrency));
+        const concurrency = Math.min(
+            values.length,
+            Number.isFinite(requestedConcurrency) && requestedConcurrency > 0 ? requestedConcurrency : 1
+        );
+        const results = new Array(values.length);
+        let nextIndex = 0;
+
+        async function runWorker() {
+            while (nextIndex < values.length) {
+                const index = nextIndex;
+                nextIndex += 1;
+                results[index] = await worker(values[index], index);
+            }
+        }
+
+        await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
+        return results;
+    }
+
+    return Object.freeze({
+        isTimedSpokenPhase,
+        mapWithConcurrency,
+        shouldReportTimedMessage,
+        summarizeTimedSpeech
+    });
 });

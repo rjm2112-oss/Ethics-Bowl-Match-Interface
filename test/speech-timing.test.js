@@ -2,7 +2,12 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { isTimedSpokenPhase, shouldReportTimedMessage, summarizeTimedSpeech } = require("../src/shared/speech-timing");
+const {
+    isTimedSpokenPhase,
+    mapWithConcurrency,
+    shouldReportTimedMessage,
+    summarizeTimedSpeech
+} = require("../src/shared/speech-timing");
 
 test("speech timing includes the timer lead and preserves sub-second precision", () => {
     const result = summarizeTimedSpeech({
@@ -48,4 +53,21 @@ test("moderator announcements and judge questions never create timing-result car
     assert.equal(shouldReportTimedMessage({ kind: "ai" }, presentation), true);
     assert.equal(shouldReportTimedMessage({ kind: "judge" }, judgeQuestion), false);
     assert.equal(shouldReportTimedMessage({ kind: "ai" }, { kind: "confer", duration: 180 }), false);
+});
+
+test("concurrent timing work is bounded and returned in original chunk order", async () => {
+    const delays = [35, 5, 20, 1, 10];
+    let active = 0;
+    let peakActive = 0;
+
+    const results = await mapWithConcurrency(delays, 3, async (delay, index) => {
+        active += 1;
+        peakActive = Math.max(peakActive, active);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        active -= 1;
+        return `chunk-${index}`;
+    });
+
+    assert.equal(peakActive, 3);
+    assert.deepEqual(results, ["chunk-0", "chunk-1", "chunk-2", "chunk-3", "chunk-4"]);
 });

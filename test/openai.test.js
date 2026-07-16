@@ -143,6 +143,72 @@ test("OpenAI speech sends supported voice instructions, retries, and returns typ
     assert.equal(result.mimeType, "audio/mpeg");
 });
 
+test("OpenAI speech retries an interrupted audio download without changing the request", async () => {
+    const calls = [];
+    const delays = [];
+    const adapter = createOpenAiAdapter({
+        fetchImpl: async (url, options) => {
+            calls.push({ url, options });
+            if (calls.length === 1) {
+                return {
+                    ok: true,
+                    status: 200,
+                    headers: new Headers({ "content-type": "audio/mpeg" }),
+                    arrayBuffer: async () => { throw new TypeError("terminated"); }
+                };
+            }
+            return new Response(Uint8Array.from([40, 50, 60]), {
+                status: 200,
+                headers: { "content-type": "audio/mpeg" }
+            });
+        },
+        sleep: async (delay) => delays.push(delay)
+    });
+    const request = {
+        model: "gpt-4o-mini-tts",
+        voice: "sage",
+        input: "Retry only this chunk.",
+        responseFormat: "mp3",
+        instructions: "Use a natural, measured cadence."
+    };
+
+    const result = await adapter.speech(request, "openai-test-value");
+
+    assert.equal(calls.length, 2);
+    assert.deepEqual(delays, [350]);
+    assert.equal(calls[0].url, SPEECH_URL);
+    assert.equal(calls[1].url, SPEECH_URL);
+    assert.equal(calls[1].options.body, calls[0].options.body);
+    assert.deepEqual([...result.bytes], [40, 50, 60]);
+});
+
+test("OpenAI speech bounds retries when every audio download is interrupted", async () => {
+    let callCount = 0;
+    const delays = [];
+    const adapter = createOpenAiAdapter({
+        fetchImpl: async () => {
+            callCount += 1;
+            return {
+                ok: true,
+                status: 200,
+                headers: new Headers({ "content-type": "audio/mpeg" }),
+                arrayBuffer: async () => { throw new TypeError("terminated"); }
+            };
+        },
+        sleep: async (delay) => delays.push(delay)
+    });
+
+    await assert.rejects(adapter.speech({
+        model: "gpt-4o-mini-tts",
+        voice: "sage",
+        input: "This download keeps ending early.",
+        responseFormat: "mp3"
+    }, "openai-test-value"), /response was interrupted/);
+
+    assert.equal(callCount, 3);
+    assert.deepEqual(delays, [350, 700]);
+});
+
 test("OpenAI transcription sends native multipart data with the final transcription model", async () => {
     let captured;
     const adapter = createOpenAiAdapter({

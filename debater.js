@@ -213,6 +213,7 @@ const CREDENTIAL_STATUS_TIMEOUT_MS = 4000;
 const FINAL_SCORECARD_REQUEST_TIMEOUT_MS = 240000;
 const MAX_TTS_CHARS = 2500;
 const SPEECH_CHUNK_MAX = 800;
+const TIMING_TEST_TTS_CONCURRENCY = 4;
 const PARTICIPANT_SPEECH_HANDOFF_GAP_MS = 650;
 const TIMED_SPEECH_TIMER_LEAD_MS = 350;
 const MODERATOR_SPEECH_INSTRUCTIONS = "Speak as a calm, professional debate moderator. Use a natural, measured cadence with brief pauses at sentence boundaries. Keep pauses subtle and consistent: do not rush sentences together and do not add dramatic or prolonged pauses. Preserve the supplied wording exactly.";
@@ -399,7 +400,6 @@ const pauseTimerBtnEl = document.getElementById("pauseTimerBtn");
 const resumeTimerBtnEl = document.getElementById("resumeTimerBtn");
 const resetTimerBtnEl = document.getElementById("resetTimerBtn");
 const timingTestPanelEl = document.getElementById("timingTestPanel");
-const timingFastForwardBtnEl = document.getElementById("timingFastForwardBtn");
 const timingTestModeNoteEl = document.getElementById("timingTestModeNote");
 const timingTestResultsEl = document.getElementById("timingTestResults");
 
@@ -545,8 +545,6 @@ const state = {
     speechChunkCounts: new Map(),
     speechStartCallbacks: new Map(),
     speechCompletionCallbacks: new Map(),
-    timingTestFastForwardEnabled: TIMING_TEST_MODE,
-    timingTestMessageModes: new Map(),
     timingTestMeasurements: new Map(),
     timingTestResults: [],
     timingTestAudioContext: null
@@ -1078,12 +1076,8 @@ function formatPreciseDuration(totalSeconds) {
     return `${minutes}:${String(seconds).padStart(2, "0")}.${String(fraction).padStart(2, "0")}`;
 }
 
-function getTimingTestFastForwardForMessage(transcriptIndex) {
-    if (!TIMING_TEST_MODE) return false;
-    if (!state.timingTestMessageModes.has(transcriptIndex)) {
-        state.timingTestMessageModes.set(transcriptIndex, state.timingTestFastForwardEnabled);
-    }
-    return state.timingTestMessageModes.get(transcriptIndex) === true;
+function getTimingTestFastForwardForMessage() {
+    return TIMING_TEST_MODE;
 }
 
 function renderTimingTestResults() {
@@ -1142,33 +1136,13 @@ function refreshTimingTestUi() {
     timingTestPanelEl.hidden = !TIMING_TEST_MODE;
     timingTestPanelEl.style.display = TIMING_TEST_MODE ? "" : "none";
     if (!TIMING_TEST_MODE) return;
-    if (timingFastForwardBtnEl) {
-        timingFastForwardBtnEl.setAttribute("aria-pressed", state.timingTestFastForwardEnabled ? "true" : "false");
-        timingFastForwardBtnEl.textContent = state.timingTestFastForwardEnabled
-            ? l("Fast-forward speech: On", "Avance rapide de la parole : activée")
-            : l("Fast-forward speech: Off", "Avance rapide de la parole : désactivée");
-    }
     if (timingTestModeNoteEl) {
-        timingTestModeNoteEl.textContent = state.timingTestFastForwardEnabled
-            ? l(
-                "Generated audio is decoded and measured exactly, then skipped. A change during speech applies to the next spoken message.",
-                "L’audio généré est décodé et mesuré exactement, puis ignoré. Un changement pendant une prise de parole s’applique au prochain message parlé."
-            )
-            : l(
-                "Speech plays in real time while the same decoded-audio timing report continues. A change during speech applies to the next spoken message.",
-                "La parole est lue en temps réel et le même rapport de durée audio décodée continue. Un changement pendant une prise de parole s’applique au prochain message parlé."
-            );
+        timingTestModeNoteEl.textContent = l(
+            "Generated audio chunks are synthesized concurrently, decoded and measured exactly, then skipped.",
+            "Les segments audio générés sont synthétisés simultanément, décodés et mesurés avec exactitude, puis ignorés."
+        );
     }
     renderTimingTestResults();
-}
-
-function toggleTimingTestFastForward() {
-    if (!TIMING_TEST_MODE) return;
-    state.timingTestFastForwardEnabled = !state.timingTestFastForwardEnabled;
-    refreshTimingTestUi();
-    setStatus(state.timingTestFastForwardEnabled
-        ? l("Speech fast-forward is on for the next spoken message.", "L’avance rapide est activée pour le prochain message parlé.")
-        : l("Normal playback is on for the next spoken message.", "La lecture normale est activée pour le prochain message parlé."));
 }
 
 function clampNumber(value, min, max) {
@@ -1189,9 +1163,9 @@ function getPhaseWordGuidance(phase) {
     if (isFrenchLocale()) {
         if (phase.kind === "speech" && phase.subtype === "presentation") {
             return {
-                min: 635,
-                max: 645,
-                preferredTarget: 640
+                min: 645,
+                max: 655,
+                preferredTarget: 650
             };
         }
 
@@ -1224,25 +1198,25 @@ function getPhaseWordGuidance(phase) {
 
     if (phase.kind === "speech" && phase.subtype === "commentary") {
         return {
-            min: 405,
-            max: 415,
-            preferredTarget: 410
+            min: 394,
+            max: 404,
+            preferredTarget: 399
         };
     }
 
     if (phase.kind === "speech" && phase.subtype === "response") {
         return {
-            min: 405,
-            max: 415,
-            preferredTarget: 410
+            min: 394,
+            max: 404,
+            preferredTarget: 399
         };
     }
 
     if (phase.kind === "judgeAnswer") {
         return {
-            min: 300,
-            max: 310,
-            preferredTarget: 305
+            min: 289,
+            max: 299,
+            preferredTarget: 294
         };
     }
 
@@ -2226,7 +2200,6 @@ function stopSpeechPlayback(showMessage = false, { resolveCallbacks = true } = {
     clearOpenAiSpeechLookahead();
     state.speechPlaybackActive = false;
     state.lastSpeechEndedAtMs = 0;
-    state.timingTestMessageModes.clear();
     state.timingTestMeasurements.clear();
     rejectCurrentSpeechPlayback();
     if (state.currentSpeechController) {
@@ -2398,7 +2371,6 @@ function recordTimingTestSpeechChunk(prepared, decodedTiming) {
     if (measurement.measuredChunks < measurement.chunkCount) return null;
 
     state.timingTestMeasurements.delete(transcriptIndex);
-    state.timingTestMessageModes.delete(transcriptIndex);
     const message = state.transcript[transcriptIndex] || {};
     const phase = getPhaseById(message.phaseId);
     if (!SPEECH_TIMING.shouldReportTimedMessage(message, phase)) return null;
@@ -2473,13 +2445,15 @@ function createLocalAbortError() {
     return error;
 }
 
-async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct" } = {}) {
+async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct", trackController = true } = {}) {
     if (!hasCredential("openai")) throw new Error(l("An OpenAI credential is required for OpenAI read-aloud.", "Un identifiant OpenAI est requis pour la lecture OpenAI."));
     if (token !== state.speechToken) return null;
     const controller = new AbortController();
-    state.currentSpeechController = controller;
-    state.currentSpeechControllerKind = controllerKind;
-    refreshSpeechUi();
+    if (trackController) {
+        state.currentSpeechController = controller;
+        state.currentSpeechControllerKind = controllerKind;
+        refreshSpeechUi();
+    }
     try {
         const isModerator = entry.kind === "moderator";
         const result = await getAudioBridge().speech({
@@ -2501,11 +2475,11 @@ async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct" 
             mimeType: blob.type
         };
     } finally {
-        if (state.currentSpeechController === controller) {
+        if (trackController && state.currentSpeechController === controller) {
             state.currentSpeechController = null;
             state.currentSpeechControllerKind = "";
         }
-        refreshSpeechUi();
+        if (trackController) refreshSpeechUi();
     }
 }
 
@@ -2645,12 +2619,84 @@ function handleOpenAiSpeechFailure(error, token) {
     );
 }
 
+function revokePreparedSpeechAudio(prepared) {
+    if (!prepared?.audioUrl) return;
+    try { URL.revokeObjectURL(prepared.audioUrl); } catch {}
+}
+
+function takeNextTimingTestSpeechMessage() {
+    if (!TIMING_TEST_MODE || !state.speechQueue.length) return [];
+    const transcriptIndex = state.speechQueue[0]?.transcriptIndex;
+    const entries = [];
+    while (state.speechQueue[0]?.transcriptIndex === transcriptIndex) {
+        entries.push(state.speechQueue.shift());
+    }
+    return entries;
+}
+
+async function processConcurrentTimingTestSpeech(entries, token) {
+    const results = await SPEECH_TIMING.mapWithConcurrency(
+        entries,
+        TIMING_TEST_TTS_CONCURRENCY,
+        async (entry) => {
+            let prepared = null;
+            try {
+                prepared = await fetchOpenAiSpeechAudio(entry, token, {
+                    controllerKind: "timing-test",
+                    trackController: false
+                });
+                if (!prepared) return { entry, cancelled: true };
+                const decodedTiming = await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
+                return { entry, prepared, decodedTiming };
+            } catch (error) {
+                return { entry, prepared, error };
+            }
+        }
+    );
+
+    if (token !== state.speechToken || results.some((result) => result.cancelled)) {
+        results.forEach((result) => revokePreparedSpeechAudio(result.prepared));
+        return false;
+    }
+
+    const failed = results.find((result) => result.error);
+    if (failed) {
+        results.forEach((result) => revokePreparedSpeechAudio(result.prepared));
+        if (!failed.error?.speechEntry) failed.error.speechEntry = failed.entry;
+        throw failed.error;
+    }
+
+    results.forEach(({ prepared, decodedTiming }) => {
+        const timingTestResult = recordTimingTestSpeechChunk(prepared, decodedTiming);
+        invokeSpeechStartCallbacks(prepared.entry?.transcriptIndex);
+        freezeTimerForFastForwardedSpeech(prepared.entry);
+        showFastForwardedTimingOnTimer(timingTestResult);
+        markSpeechChunkComplete(prepared.entry.transcriptIndex);
+        revokePreparedSpeechAudio(prepared);
+    });
+    refreshSpeechUi();
+    await waitMs(0);
+    return token === state.speechToken;
+}
+
 async function processSpeechQueue(token = state.speechToken) {
     if (state.speechProcessing) return;
     state.speechProcessing = true;
     refreshSpeechUi();
     try {
         while (token === state.speechToken) {
+            if (TIMING_TEST_MODE) {
+                const timingEntries = takeNextTimingTestSpeechMessage();
+                if (!timingEntries.length) break;
+                try {
+                    if (!await processConcurrentTimingTestSpeech(timingEntries, token)) break;
+                } catch (error) {
+                    if (token !== state.speechToken || error?.name === "AbortError" || error?.message === STOP_SPEECH_ERROR) break;
+                    handleOpenAiSpeechFailure(error, token);
+                    break;
+                }
+                continue;
+            }
             let prepared = null;
             try {
                 prepared = await getNextOpenAiSpeechPrepared(token);
@@ -2661,31 +2707,6 @@ async function processSpeechQueue(token = state.speechToken) {
             }
             if (!prepared) break;
             kickOpenAiSpeechLookahead(token);
-            let timingTestResult = null;
-            const fastForwarded = getTimingTestFastForwardForMessage(prepared.entry?.transcriptIndex);
-            if (TIMING_TEST_MODE) {
-                try {
-                    const decodedTiming = await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
-                    timingTestResult = recordTimingTestSpeechChunk(prepared, decodedTiming);
-                } catch (error) {
-                    if (token !== state.speechToken || error?.name === "AbortError" || error?.message === STOP_SPEECH_ERROR) break;
-                    handleOpenAiSpeechFailure(error, token);
-                    break;
-                }
-            }
-            if (fastForwarded) {
-                invokeSpeechStartCallbacks(prepared.entry?.transcriptIndex);
-                freezeTimerForFastForwardedSpeech(prepared.entry);
-                showFastForwardedTimingOnTimer(timingTestResult);
-                markSpeechChunkComplete(prepared.entry.transcriptIndex);
-                if (prepared.audioUrl) {
-                    try { URL.revokeObjectURL(prepared.audioUrl); } catch {}
-                }
-                refreshSpeechUi();
-                const isLastChunk = Number(prepared.entry?.chunkIndex) + 1 >= Number(prepared.entry?.chunkCount || 1);
-                if (isLastChunk) await waitMs(0);
-                continue;
-            }
             const minimumHandoffGapMs = Math.max(0, Math.min(3000, Number(prepared.entry?.minimumHandoffGapMs) || 0));
             const elapsedSincePriorSpeechMs = state.lastSpeechEndedAtMs
                 ? Math.max(0, Date.now() - state.lastSpeechEndedAtMs)
@@ -5235,7 +5256,6 @@ function resetStateForNewMatch() {
     state.speechChunkCounts = new Map();
     state.speechStartCallbacks = new Map();
     state.speechCompletionCallbacks = new Map();
-    state.timingTestMessageModes = new Map();
     state.timingTestMeasurements = new Map();
     state.timingTestResults = [];
     state.participantTypes = {
@@ -5852,8 +5872,6 @@ passBtnEl.addEventListener("click", () => handleHumanCoinChoice("pass"));
 pauseTimerBtnEl.addEventListener("click", pauseTimer);
 resumeTimerBtnEl.addEventListener("click", resumeTimer);
 resetTimerBtnEl.addEventListener("click", resetPhaseTimer);
-timingFastForwardBtnEl?.addEventListener("click", toggleTimingTestFastForward);
-
 composerFormEl.addEventListener("submit", (event) => {
     event.preventDefault();
     submitComposerAction();
