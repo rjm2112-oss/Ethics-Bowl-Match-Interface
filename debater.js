@@ -1327,9 +1327,9 @@ function getPhaseWordGuidance(phase) {
 
         if (phase.kind === "speech" && (phase.subtype === "commentary" || phase.subtype === "response")) {
             return {
-                min: 415,
-                max: 425,
-                preferredTarget: 420
+                min: 405,
+                max: 415,
+                preferredTarget: 410
             };
         }
 
@@ -1354,17 +1354,17 @@ function getPhaseWordGuidance(phase) {
 
     if (phase.kind === "speech" && phase.subtype === "commentary") {
         return {
-            min: 415,
-            max: 425,
-            preferredTarget: 420
+            min: 405,
+            max: 415,
+            preferredTarget: 410
         };
     }
 
     if (phase.kind === "speech" && phase.subtype === "response") {
         return {
-            min: 415,
-            max: 425,
-            preferredTarget: 420
+            min: 405,
+            max: 415,
+            preferredTarget: 410
         };
     }
 
