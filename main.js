@@ -12,6 +12,15 @@ const RENDERER_FILE = path.join(__dirname, "debater.html");
 const RENDERER_URL = pathToFileURL(RENDERER_FILE).href;
 const TIMING_TEST_MODE = process.argv.includes("--timing-test");
 const TIMING_TEST_AUTO_START = TIMING_TEST_MODE && process.argv.includes("--auto-start");
+const TIMING_TEST_LIMIT = TIMING_TEST_MODE
+    ? Math.max(0, Math.min(50, Number.parseInt(
+        process.argv.find((argument) => argument.startsWith("--timing-test-limit="))?.split("=")[1] || "0",
+        10
+    ) || 0))
+    : 0;
+const TIMING_TEST_LANGUAGE = TIMING_TEST_MODE
+    ? process.argv.find((argument) => argument.startsWith("--lang="))?.split("=")[1]
+    : "";
 const ALLOWED_NAVIGATION_URLS = new Set([
     RENDERER_FILE,
     path.join(__dirname, "instructions.html")
@@ -103,7 +112,10 @@ function createWindow() {
     void win.loadFile(RENDERER_FILE, TIMING_TEST_MODE
         ? { query: {
             timingTest: "1",
-            ...(TIMING_TEST_AUTO_START ? { autoStart: "1" } : {})
+            ...(TIMING_TEST_AUTO_START ? { autoStart: "1" } : {}),
+            ...(TIMING_TEST_LIMIT ? { timingLimit: String(TIMING_TEST_LIMIT) } : {}),
+            ...(/^fr(?:-|$)/i.test(TIMING_TEST_LANGUAGE || "") ? { lang: "fr-ca" } : {}),
+            ...(/^en(?:-|$)/i.test(TIMING_TEST_LANGUAGE || "") ? { lang: "en" } : {})
         } }
         : undefined);
     return win;

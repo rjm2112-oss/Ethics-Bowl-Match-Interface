@@ -23,6 +23,12 @@ if (!SCORECARD_TALLY) throw new Error("The shared scorecard tally helpers could 
 const TIMING_TEST_MODE = new URLSearchParams(window.location.search).get("timingTest") === "1";
 const TIMING_TEST_AUTO_START = TIMING_TEST_MODE
     && new URLSearchParams(window.location.search).get("autoStart") === "1";
+const TIMING_TEST_RESULT_LIMIT = TIMING_TEST_MODE
+    ? Math.max(0, Math.min(50, Number.parseInt(
+        new URLSearchParams(window.location.search).get("timingLimit") || "0",
+        10
+    ) || 0))
+    : 0;
 
 const AVAILABLE_MATCH_MODELS = MODEL_CATALOG.MATCH_MODELS;
 const DEFAULT_PARTICIPANT_MODEL = MODEL_CATALOG.DEFAULT_PARTICIPANT_MODEL;
@@ -1197,6 +1203,19 @@ async function playTimingTestResult(result) {
 
 function renderTimingTestResults() {
     if (!timingTestResultsEl) return;
+    if (timingTestModeNoteEl) {
+        const resultCount = state.timingTestResults.length;
+        const runComplete = TIMING_TEST_RESULT_LIMIT > 0 && resultCount >= TIMING_TEST_RESULT_LIMIT;
+        timingTestModeNoteEl.textContent = runComplete
+            ? l(
+                `${TIMING_TEST_RESULT_LIMIT}-test run complete. All results remain open below for comparison.`,
+                `Série de ${TIMING_TEST_RESULT_LIMIT} tests terminée. Tous les résultats restent ouverts ci-dessous pour comparaison.`
+            )
+            : l(
+                `Generated audio is measured exactly and adjusted virtually without playback.${TIMING_TEST_RESULT_LIMIT ? ` Result ${resultCount} of ${TIMING_TEST_RESULT_LIMIT}.` : ""}`,
+                `L’audio généré est mesuré avec exactitude et ajusté virtuellement sans lecture.${TIMING_TEST_RESULT_LIMIT ? ` Résultat ${resultCount} sur ${TIMING_TEST_RESULT_LIMIT}.` : ""}`
+            );
+    }
     timingTestResultsEl.replaceChildren();
     if (!state.timingTestResults.length) {
         const empty = document.createElement("div");
@@ -1211,11 +1230,10 @@ function renderTimingTestResults() {
 
     [...state.timingTestResults].reverse().forEach((result) => {
         const card = document.createElement("article");
-        card.className = "timing-sheet";
-        card.style.padding = "10px";
+        card.className = "timing-sheet timing-test-result";
 
         const title = document.createElement("div");
-        title.style.fontWeight = "750";
+        title.className = "timing-test-result-title";
         title.textContent = `${result.phaseTitle} — ${result.label}`;
 
         const metrics = document.createElement("div");
@@ -1233,8 +1251,7 @@ function renderTimingTestResults() {
         );
 
         const outcome = document.createElement("div");
-        outcome.className = "small-note";
-        outcome.style.fontWeight = "750";
+        outcome.className = "small-note timing-test-result-outcome";
         if (result.summary.overrunSeconds > 0) {
             outcome.style.color = "#a33a2b";
             outcome.textContent = l(
@@ -1257,8 +1274,7 @@ function renderTimingTestResults() {
 
         const playButton = document.createElement("button");
         playButton.type = "button";
-        playButton.className = "secondary-btn";
-        playButton.style.marginTop = "8px";
+        playButton.className = "secondary-btn timing-test-preview-button";
         const previewActive = state.timingPreviewTranscriptIndex === result.transcriptIndex;
         playButton.textContent = previewActive
             ? l("Stop preview", "Arrêter l’aperçu")
@@ -1273,16 +1289,16 @@ function renderTimingTestResults() {
 
 function refreshTimingTestUi() {
     if (!timingTestPanelEl) return;
+    document.body.classList.toggle("timing-test-mode", TIMING_TEST_MODE);
     timingTestPanelEl.hidden = !TIMING_TEST_MODE;
     timingTestPanelEl.style.display = TIMING_TEST_MODE ? "" : "none";
     if (!TIMING_TEST_MODE) return;
-    if (timingTestModeNoteEl) {
-        timingTestModeNoteEl.textContent = l(
-            "Generated audio chunks are synthesized concurrently and measured exactly. The whole-speech multiplier is then applied virtually and playback is skipped.",
-            "Les segments audio générés sont synthétisés simultanément et mesurés avec exactitude. Le multiplicateur global est ensuite appliqué virtuellement et la lecture est ignorée."
-        );
-    }
     renderTimingTestResults();
+}
+
+function timingTestResultLimitReached() {
+    return TIMING_TEST_RESULT_LIMIT > 0
+        && state.timingTestResults.length >= TIMING_TEST_RESULT_LIMIT;
 }
 
 function clampNumber(value, min, max) {
@@ -1303,25 +1319,25 @@ function getPhaseWordGuidance(phase) {
     if (isFrenchLocale()) {
         if (phase.kind === "speech" && phase.subtype === "presentation") {
             return {
-                min: 645,
-                max: 655,
-                preferredTarget: 650
+                min: 695,
+                max: 705,
+                preferredTarget: 700
             };
         }
 
         if (phase.kind === "speech" && (phase.subtype === "commentary" || phase.subtype === "response")) {
             return {
-                min: 372,
-                max: 382,
-                preferredTarget: 377
+                min: 415,
+                max: 425,
+                preferredTarget: 420
             };
         }
 
         if (phase.kind === "judgeAnswer") {
             return {
-                min: 265,
-                max: 275,
-                preferredTarget: 270
+                min: 320,
+                max: 330,
+                preferredTarget: 325
             };
         }
 
@@ -1330,33 +1346,33 @@ function getPhaseWordGuidance(phase) {
 
     if (phase.kind === "speech" && phase.subtype === "presentation") {
         return {
-            min: 705,
-            max: 715,
-            preferredTarget: 710
+            min: 695,
+            max: 705,
+            preferredTarget: 700
         };
     }
 
     if (phase.kind === "speech" && phase.subtype === "commentary") {
         return {
-            min: 400,
-            max: 410,
-            preferredTarget: 405
+            min: 415,
+            max: 425,
+            preferredTarget: 420
         };
     }
 
     if (phase.kind === "speech" && phase.subtype === "response") {
         return {
-            min: 400,
-            max: 410,
-            preferredTarget: 405
+            min: 415,
+            max: 425,
+            preferredTarget: 420
         };
     }
 
     if (phase.kind === "judgeAnswer") {
         return {
-            min: 295,
-            max: 305,
-            preferredTarget: 300
+            min: 320,
+            max: 330,
+            preferredTarget: 325
         };
     }
 
@@ -3220,6 +3236,13 @@ function enqueueTranscriptSpeech(kind, text, transcriptIndex = -1, voiceKey = ""
     void processSpeechQueue(state.speechToken);
 }
 
+function shouldAutoSpeakMessage(kind, text, options = {}) {
+    if (options.silent || !AUTO_SPEAK_MESSAGE_KINDS.has(kind) || !normalizeSpeechText(text)) return false;
+    if (!TIMING_TEST_MODE) return true;
+    const phase = getPhaseById(options.phaseId);
+    return SPEECH_TIMING.shouldReportTimedMessage({ kind }, phase);
+}
+
 function appendMessage(kind, label, text, options = {}) {
     const voiceKey = getVoiceKeyForMessage(kind, options);
     state.transcript.push({
@@ -3236,7 +3259,7 @@ function appendMessage(kind, label, text, options = {}) {
     const transcriptIndex = state.transcript.length - 1;
     const onPlaybackStart = typeof options.onPlaybackStart === "function" ? options.onPlaybackStart : null;
     const onPlaybackComplete = typeof options.onPlaybackComplete === "function" ? options.onPlaybackComplete : null;
-    const willAutoSpeak = !options.silent && AUTO_SPEAK_MESSAGE_KINDS.has(kind) && !!normalizeSpeechText(text);
+    const willAutoSpeak = shouldAutoSpeakMessage(kind, text, options);
     if (onPlaybackStart) {
         if (willAutoSpeak) registerSpeechStartCallback(transcriptIndex, onPlaybackStart);
         else {
@@ -3254,7 +3277,7 @@ function appendMessage(kind, label, text, options = {}) {
         }
     }
     renderTranscript();
-    if (!options.silent) enqueueTranscriptSpeech(kind, text, transcriptIndex, voiceKey, options);
+    if (willAutoSpeak) enqueueTranscriptSpeech(kind, text, transcriptIndex, voiceKey, options);
     return transcriptIndex;
 }
 
@@ -6024,7 +6047,7 @@ function enterCurrentPhase() {
 }
 
 function advancePhase() {
-    if (state.completed) return;
+    if (state.completed || timingTestResultLimitReached()) return;
     if (state.currentPhaseIndex + 1 >= state.phases.length) return;
     clearPhaseAwaitingPlayback();
     state.pendingAutoActionPhaseId = "";
@@ -6104,6 +6127,57 @@ function updateComposerPlaceholder() {
         return;
     }
     messageInputEl.placeholder = l("Text and voice inputs become active during human-controlled turns and human judge question phases.", "Les saisies texte et vocales deviennent actives pendant les tours humains et les phases de question des juges humains.");
+}
+
+function getAllAiMatchActivityStatus(phase = getCurrentPhase()) {
+    if (state.coinTossAnimating) return l("Automated coin toss in progress...", "Tirage automatisé en cours...");
+    if (!phase) return l("Starting the automated match...", "Démarrage du match automatisé...");
+    if (!state.phaseReady) {
+        return isFrenchLocale()
+            ? `Transition automatisée vers ${phase.title}...`
+            : `Automated transition to ${phase.title}...`;
+    }
+    if (isCurrentPhaseAwaitingPlayback(phase)) {
+        return isFrenchLocale()
+            ? `${phase.title} : traitement de la prise de parole minutée...`
+            : `${phase.title}: processing the timed speech...`;
+    }
+    if (phase.kind === "confer") {
+        return isFrenchLocale()
+            ? `${speakerName(phase.speaker)} prépare son ${phaseSubtypeLabel(phase.subtype).toLowerCase()}...`
+            : `${speakerName(phase.speaker)} is preparing the ${phase.subtype || "speech"}...`;
+    }
+    if (phase.kind === "speech") {
+        return isFrenchLocale()
+            ? `${speakerName(phase.speaker)} effectue automatiquement son ${phaseSubtypeLabel(phase.subtype).toLowerCase()}...`
+            : `${speakerName(phase.speaker)} is running the ${phase.subtype || "speech"} automatically...`;
+    }
+    if (phase.kind === "judgeQuestion") {
+        return isFrenchLocale()
+            ? `${judgeLabel(phase.judgeNumber)} prépare une question...`
+            : `${judgeLabel(phase.judgeNumber)} is preparing a question...`;
+    }
+    if (phase.kind === "judgeAnswer") {
+        return isFrenchLocale()
+            ? `${speakerName(phase.speaker)} prépare une réponse au ${judgeLabel(phase.judgeNumber)}...`
+            : `${speakerName(phase.speaker)} is preparing an answer to ${judgeLabel(phase.judgeNumber)}...`;
+    }
+    if (phase.kind === "scoring") return l("AI judges are scoring the case...", "Les juges IA évaluent le cas...");
+    if (phase.kind === "closing") return l("AI judges are finalizing the decision...", "Les juges IA finalisent la décision...");
+    return isFrenchLocale()
+        ? `Exécution automatisée de ${phase.title}...`
+        : `Running ${phase.title} automatically...`;
+}
+
+function replaceGenericReadyStatusForAllAiMatch() {
+    const isAllAiMatch = state.started
+        && !state.completed
+        && isAiControlledRole("human")
+        && isAiControlledRole("ai")
+        && state.judgeMode === "ai";
+    if (!isAllAiMatch) return;
+    if (sanitizeText(statusLineEl.textContent) !== l("Ready.", "Prêt.")) return;
+    setStatus(getAllAiMatchActivityStatus());
 }
 
 function refreshControls() {
@@ -6249,6 +6323,7 @@ function refreshControls() {
     refreshJudgeStatuses();
     updateComposerModeIndicator();
     refreshSpeechUi();
+    replaceGenericReadyStatusForAllAiMatch();
 }
 
 async function handleNextAction() {
