@@ -36,6 +36,47 @@
         });
     }
 
+    function planWholeSpeechPlayback({
+        audioDurationSeconds = 0,
+        timerLeadMs = 0,
+        timerBudgetSeconds = 0,
+        minimumPlaybackRate = 0.924,
+        maximumPlaybackRate = 1.09
+    } = {}) {
+        const audioSeconds = finiteNonNegative(audioDurationSeconds);
+        const leadSeconds = finiteNonNegative(timerLeadMs) / 1000;
+        const budgetSeconds = finiteNonNegative(timerBudgetSeconds);
+        const requestedMinimum = Number(minimumPlaybackRate);
+        const requestedMaximum = Number(maximumPlaybackRate);
+        const minimumRate = Number.isFinite(requestedMinimum) && requestedMinimum > 0
+            ? requestedMinimum
+            : 0.924;
+        const maximumRate = Number.isFinite(requestedMaximum) && requestedMaximum >= minimumRate
+            ? requestedMaximum
+            : Math.max(minimumRate, 1.09);
+        const availablePlaybackSeconds = Math.max(0, budgetSeconds - leadSeconds);
+        const rawPlaybackRate = audioSeconds > 0 && availablePlaybackSeconds > 0
+            ? audioSeconds / availablePlaybackSeconds
+            : 1;
+        const playbackRate = Math.min(maximumRate, Math.max(minimumRate, rawPlaybackRate));
+        const projectedPlaybackSeconds = audioSeconds > 0 ? audioSeconds / playbackRate : 0;
+        const projectedTimerConsumedSeconds = leadSeconds + projectedPlaybackSeconds;
+
+        return Object.freeze({
+            audioDurationSeconds: audioSeconds,
+            timerLeadSeconds: leadSeconds,
+            timerBudgetSeconds: budgetSeconds,
+            availablePlaybackSeconds,
+            minimumPlaybackRate: minimumRate,
+            maximumPlaybackRate: maximumRate,
+            rawPlaybackRate,
+            playbackRate,
+            projectedPlaybackSeconds,
+            projectedTimerConsumedSeconds,
+            projectedSignedRemainingSeconds: budgetSeconds - projectedTimerConsumedSeconds
+        });
+    }
+
     function isTimedSpokenPhase(phase) {
         return !!phase?.duration
             && (phase.kind === "speech" || phase.kind === "judgeQuestion" || phase.kind === "judgeAnswer");
@@ -75,6 +116,7 @@
     return Object.freeze({
         isTimedSpokenPhase,
         mapWithConcurrency,
+        planWholeSpeechPlayback,
         shouldReportTimedMessage,
         summarizeTimedSpeech
     });

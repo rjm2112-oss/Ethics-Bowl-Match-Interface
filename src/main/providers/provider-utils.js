@@ -57,6 +57,7 @@ async function fetchWithRetries({
     sleep,
     maxAttempts = 3,
     requestTimeoutMs = 90000,
+    retryTimeouts = false,
     consumeResponse = null
 }) {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -75,7 +76,13 @@ async function fetchWithRetries({
             try {
                 response = await fetchImpl(url, { ...options, signal: controller.signal });
             } catch (error) {
-                if (timedOut) throw new Error("The AI provider request timed out. Try again.");
+                if (timedOut) {
+                    if (!retryTimeouts || attempt >= maxAttempts) {
+                        throw new Error("The AI provider request timed out. Try again.");
+                    }
+                    await sleep(retryDelayMs(attempt));
+                    continue;
+                }
                 if (!isRetryableNetworkError(error) || attempt >= maxAttempts) {
                     throw new Error("The AI provider could not be reached.");
                 }
@@ -95,7 +102,13 @@ async function fetchWithRetries({
             try {
                 return await consumeResponse(response);
             } catch (error) {
-                if (timedOut) throw new Error("The AI provider request timed out. Try again.");
+                if (timedOut) {
+                    if (!retryTimeouts || attempt >= maxAttempts) {
+                        throw new Error("The AI provider request timed out. Try again.");
+                    }
+                    await sleep(retryDelayMs(attempt));
+                    continue;
+                }
                 if (!isRetryableNetworkError(error)) throw error;
                 if (attempt >= maxAttempts) throw new Error("The AI provider response was interrupted.");
                 await sleep(retryDelayMs(attempt));
@@ -116,6 +129,7 @@ async function postJsonWithRetries({
     sleep,
     maxAttempts = 3,
     requestTimeoutMs,
+    retryTimeouts = false,
     consumeResponse = null
 }) {
     return fetchWithRetries({
@@ -130,6 +144,7 @@ async function postJsonWithRetries({
         sleep,
         maxAttempts,
         requestTimeoutMs,
+        retryTimeouts,
         consumeResponse
     });
 }

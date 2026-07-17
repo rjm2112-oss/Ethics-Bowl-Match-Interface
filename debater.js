@@ -214,6 +214,9 @@ const FINAL_SCORECARD_REQUEST_TIMEOUT_MS = 240000;
 const MAX_TTS_CHARS = 2500;
 const SPEECH_CHUNK_MAX = 800;
 const TIMING_TEST_TTS_CONCURRENCY = 4;
+const WHOLE_SPEECH_TTS_CONCURRENCY = 2;
+const WHOLE_SPEECH_MIN_PLAYBACK_RATE = 0.924;
+const WHOLE_SPEECH_MAX_PLAYBACK_RATE = 1.09;
 const PARTICIPANT_SPEECH_HANDOFF_GAP_MS = 650;
 const TIMED_SPEECH_TIMER_LEAD_MS = 350;
 const MODERATOR_SPEECH_INSTRUCTIONS = "Speak as a calm, professional debate moderator. Use a natural, measured cadence with brief pauses at sentence boundaries. Keep pauses subtle and consistent: do not rush sentences together and do not add dramatic or prolonged pauses. Preserve the supplied wording exactly.";
@@ -533,6 +536,8 @@ const state = {
     openAiSpeechLookaheadPromise: null,
     openAiSpeechLookaheadPrepared: null,
     openAiSpeechLookaheadEntry: null,
+    wholeSpeechPreparations: new Map(),
+    wholeSpeechPendingTranscriptIndexes: new Set(),
     speechPlaybackActive: false,
     lastSpeechEndedAtMs: 0,
         speechProgressMessageIndex: -1,
@@ -547,7 +552,11 @@ const state = {
     speechCompletionCallbacks: new Map(),
     timingTestMeasurements: new Map(),
     timingTestResults: [],
-    timingTestAudioContext: null
+    timingTestAudioContext: null,
+    timingPreviewAudioEl: null,
+    timingPreviewToken: 0,
+    timingPreviewTranscriptIndex: -1,
+    timingPreviewResolve: null
 };
 
 function sanitizeText(value) {
@@ -1080,6 +1089,112 @@ function getTimingTestFastForwardForMessage() {
     return TIMING_TEST_MODE;
 }
 
+function ensureTimingPreviewAudioEl() {
+    if (state.timingPreviewAudioEl && document.body.contains(state.timingPreviewAudioEl)) {
+        return state.timingPreviewAudioEl;
+    }
+    const audioEl = document.createElement("audio");
+    audioEl.preload = "auto";
+    audioEl.hidden = true;
+    audioEl.setAttribute("aria-hidden", "true");
+    if ("preservesPitch" in audioEl) audioEl.preservesPitch = true;
+    if ("webkitPreservesPitch" in audioEl) audioEl.webkitPreservesPitch = true;
+    document.body.appendChild(audioEl);
+    state.timingPreviewAudioEl = audioEl;
+    return audioEl;
+}
+
+function stopTimingTestPreview({ rerender = true } = {}) {
+    state.timingPreviewToken += 1;
+    state.timingPreviewTranscriptIndex = -1;
+    const resolveCurrent = state.timingPreviewResolve;
+    state.timingPreviewResolve = null;
+    const audioEl = state.timingPreviewAudioEl;
+    if (audioEl) {
+        try {
+            audioEl.pause();
+            audioEl.currentTime = 0;
+        } catch {}
+        audioEl.onended = null;
+        audioEl.onerror = null;
+        audioEl.removeAttribute("src");
+        try { audioEl.load(); } catch {}
+    }
+    if (typeof resolveCurrent === "function") resolveCurrent();
+    if (rerender) renderTimingTestResults();
+}
+
+function revokeTimingTestAudioChunks(chunks) {
+    (chunks || []).forEach((chunk) => {
+        if (!chunk?.audioUrl) return;
+        try { URL.revokeObjectURL(chunk.audioUrl); } catch {}
+        chunk.audioUrl = "";
+    });
+}
+
+function clearTimingTestAudioCache() {
+    stopTimingTestPreview({ rerender: false });
+    state.timingTestMeasurements.forEach((measurement) => {
+        revokeTimingTestAudioChunks(measurement?.audioChunks);
+    });
+    state.timingTestResults.forEach((result) => {
+        revokeTimingTestAudioChunks(result?.audioChunks);
+    });
+}
+
+async function playTimingTestResult(result) {
+    if (!result?.audioChunks?.length) return;
+    if (state.timingPreviewTranscriptIndex === result.transcriptIndex) {
+        stopTimingTestPreview();
+        return;
+    }
+
+    stopTimingTestPreview({ rerender: false });
+    const token = state.timingPreviewToken;
+    state.timingPreviewTranscriptIndex = result.transcriptIndex;
+    renderTimingTestResults();
+    const audioEl = ensureTimingPreviewAudioEl();
+    const playbackRate = result.playbackPlan.playbackRate;
+
+    try {
+        for (const chunk of result.audioChunks) {
+            if (token !== state.timingPreviewToken || !chunk?.audioUrl) break;
+            await new Promise((resolve, reject) => {
+                let settled = false;
+                const finish = (error = null) => {
+                    if (settled) return;
+                    settled = true;
+                    if (state.timingPreviewResolve === finish) state.timingPreviewResolve = null;
+                    audioEl.onended = null;
+                    audioEl.onerror = null;
+                    if (error) reject(error);
+                    else resolve();
+                };
+                state.timingPreviewResolve = finish;
+                audioEl.src = chunk.audioUrl;
+                audioEl.defaultPlaybackRate = playbackRate;
+                audioEl.playbackRate = playbackRate;
+                if ("preservesPitch" in audioEl) audioEl.preservesPitch = true;
+                if ("webkitPreservesPitch" in audioEl) audioEl.webkitPreservesPitch = true;
+                audioEl.onended = () => finish();
+                audioEl.onerror = () => finish(new Error("Timing preview playback failed."));
+                try {
+                    const playPromise = audioEl.play();
+                    if (playPromise && typeof playPromise.catch === "function") playPromise.catch((error) => finish(error));
+                } catch (error) {
+                    finish(error);
+                }
+            });
+        }
+    } catch (error) {
+        if (token === state.timingPreviewToken) {
+            setStatus(error?.message || l("Timing preview playback failed.", "La lecture de l’aperçu minuté a échoué."), true);
+        }
+    } finally {
+        if (token === state.timingPreviewToken) stopTimingTestPreview();
+    }
+}
+
 function renderTimingTestResults() {
     if (!timingTestResultsEl) return;
     timingTestResultsEl.replaceChildren();
@@ -1106,8 +1221,15 @@ function renderTimingTestResults() {
         const metrics = document.createElement("div");
         metrics.className = "small-note";
         metrics.textContent = l(
-            `${result.summary.wordCount} words • audio ${formatPreciseDuration(result.summary.audioDurationSeconds)} • clock ${formatPreciseDuration(result.summary.timerConsumedSeconds)} / ${formatPreciseDuration(result.summary.timerBudgetSeconds)} • ${result.chunkCount} chunks`,
-            `${result.summary.wordCount} mots • audio ${formatPreciseDuration(result.summary.audioDurationSeconds)} • minuterie ${formatPreciseDuration(result.summary.timerConsumedSeconds)} / ${formatPreciseDuration(result.summary.timerBudgetSeconds)} • ${result.chunkCount} segments`
+            `Natural at 1.000×: ${formatPreciseDuration(result.naturalSummary.audioDurationSeconds)} audio • ${result.naturalSummary.wordsPerMinute.toFixed(1)} WPM`,
+            `Naturel à 1.000× : ${formatPreciseDuration(result.naturalSummary.audioDurationSeconds)} d’audio • ${result.naturalSummary.wordsPerMinute.toFixed(1)} mots/min`
+        );
+
+        const adjustedMetrics = document.createElement("div");
+        adjustedMetrics.className = "small-note";
+        adjustedMetrics.textContent = l(
+            `Adjusted at ${result.playbackPlan.playbackRate.toFixed(3)}×: ${formatPreciseDuration(result.summary.audioDurationSeconds)} audio • ${result.summary.wordsPerMinute.toFixed(1)} WPM`,
+            `Ajusté à ${result.playbackPlan.playbackRate.toFixed(3)}× : ${formatPreciseDuration(result.summary.audioDurationSeconds)} d’audio • ${result.summary.wordsPerMinute.toFixed(1)} mots/min`
         );
 
         const outcome = document.createElement("div");
@@ -1116,17 +1238,35 @@ function renderTimingTestResults() {
         if (result.summary.overrunSeconds > 0) {
             outcome.style.color = "#a33a2b";
             outcome.textContent = l(
-                `${formatPreciseDuration(result.summary.overrunSeconds)} over time • ${result.summary.wordsPerMinute.toFixed(1)} spoken wpm • ${result.fastForwarded ? "fast-forwarded" : "played live"}`,
-                `${formatPreciseDuration(result.summary.overrunSeconds)} au-delà du temps • ${result.summary.wordsPerMinute.toFixed(1)} mots/min • ${result.fastForwarded ? "avance rapide" : "lecture en direct"}`
+                `Adjusted clock: ${formatPreciseDuration(result.summary.timerConsumedSeconds)} / ${formatPreciseDuration(result.summary.timerBudgetSeconds)} • ${formatPreciseDuration(result.summary.overrunSeconds)} over time`,
+                `Minuterie ajustée : ${formatPreciseDuration(result.summary.timerConsumedSeconds)} / ${formatPreciseDuration(result.summary.timerBudgetSeconds)} • dépassement de ${formatPreciseDuration(result.summary.overrunSeconds)}`
             );
         } else {
             outcome.textContent = l(
-                `${formatPreciseDuration(result.summary.remainingSeconds)} left • ${result.summary.wordsPerMinute.toFixed(1)} spoken wpm • ${result.fastForwarded ? "fast-forwarded" : "played live"}`,
-                `${formatPreciseDuration(result.summary.remainingSeconds)} restant • ${result.summary.wordsPerMinute.toFixed(1)} mots/min • ${result.fastForwarded ? "avance rapide" : "lecture en direct"}`
+                `Adjusted clock: ${formatPreciseDuration(result.summary.timerConsumedSeconds)} / ${formatPreciseDuration(result.summary.timerBudgetSeconds)} • ${formatPreciseDuration(result.summary.remainingSeconds)} left`,
+                `Minuterie ajustée : ${formatPreciseDuration(result.summary.timerConsumedSeconds)} / ${formatPreciseDuration(result.summary.timerBudgetSeconds)} • ${formatPreciseDuration(result.summary.remainingSeconds)} restant`
             );
         }
 
-        card.append(title, metrics, outcome);
+        const technical = document.createElement("div");
+        technical.className = "small-note";
+        technical.textContent = l(
+            `${result.summary.wordCount} words • ${result.chunkCount} audio chunks • calculated without playback`,
+            `${result.summary.wordCount} mots • ${result.chunkCount} segments audio • calculé sans lecture`
+        );
+
+        const playButton = document.createElement("button");
+        playButton.type = "button";
+        playButton.className = "secondary-btn";
+        playButton.style.marginTop = "8px";
+        const previewActive = state.timingPreviewTranscriptIndex === result.transcriptIndex;
+        playButton.textContent = previewActive
+            ? l("Stop preview", "Arrêter l’aperçu")
+            : l(`Play adjusted speech (${result.playbackPlan.playbackRate.toFixed(3)}×)`, `Lire la prise de parole ajustée (${result.playbackPlan.playbackRate.toFixed(3)}×)`);
+        playButton.disabled = !result.audioChunks?.some((chunk) => !!chunk.audioUrl);
+        playButton.addEventListener("click", () => { void playTimingTestResult(result); });
+
+        card.append(title, metrics, adjustedMetrics, outcome, technical, playButton);
         timingTestResultsEl.appendChild(card);
     });
 }
@@ -1138,8 +1278,8 @@ function refreshTimingTestUi() {
     if (!TIMING_TEST_MODE) return;
     if (timingTestModeNoteEl) {
         timingTestModeNoteEl.textContent = l(
-            "Generated audio chunks are synthesized concurrently, decoded and measured exactly, then skipped.",
-            "Les segments audio générés sont synthétisés simultanément, décodés et mesurés avec exactitude, puis ignorés."
+            "Generated audio chunks are synthesized concurrently and measured exactly. The whole-speech multiplier is then applied virtually and playback is skipped.",
+            "Les segments audio générés sont synthétisés simultanément et mesurés avec exactitude. Le multiplicateur global est ensuite appliqué virtuellement et la lecture est ignorée."
         );
     }
     renderTimingTestResults();
@@ -1198,25 +1338,25 @@ function getPhaseWordGuidance(phase) {
 
     if (phase.kind === "speech" && phase.subtype === "commentary") {
         return {
-            min: 394,
-            max: 404,
-            preferredTarget: 399
+            min: 400,
+            max: 410,
+            preferredTarget: 405
         };
     }
 
     if (phase.kind === "speech" && phase.subtype === "response") {
         return {
-            min: 394,
-            max: 404,
-            preferredTarget: 399
+            min: 400,
+            max: 410,
+            preferredTarget: 405
         };
     }
 
     if (phase.kind === "judgeAnswer") {
         return {
-            min: 289,
-            max: 299,
-            preferredTarget: 294
+            min: 295,
+            max: 305,
+            preferredTarget: 300
         };
     }
 
@@ -2115,6 +2255,10 @@ function ensureSpeechAudioEl() {
     if (state.speechAudioEl && document.body.contains(state.speechAudioEl)) return state.speechAudioEl;
     const audioEl = document.createElement("audio");
     audioEl.preload = "auto";
+    audioEl.defaultPlaybackRate = 1;
+    audioEl.playbackRate = 1;
+    if ("preservesPitch" in audioEl) audioEl.preservesPitch = true;
+    if ("webkitPreservesPitch" in audioEl) audioEl.webkitPreservesPitch = true;
     audioEl.hidden = true;
     audioEl.setAttribute("aria-hidden", "true");
     document.body.appendChild(audioEl);
@@ -2125,7 +2269,7 @@ function ensureSpeechAudioEl() {
 function isSpeechPlaybackActive() {
     const audioEl = state.speechAudioEl;
     const audioPlaying = !!(audioEl && audioEl.src && typeof audioEl.paused === "boolean" && !audioEl.paused);
-    return state.speechProcessing || state.speechPlaybackActive || !!state.speechQueue.length || !!state.currentSpeechController || !!state.openAiSpeechLookaheadPromise || !!state.openAiSpeechLookaheadPrepared || audioPlaying;
+    return state.speechProcessing || state.speechPlaybackActive || !!state.speechQueue.length || !!state.wholeSpeechPendingTranscriptIndexes.size || !!state.currentSpeechController || !!state.openAiSpeechLookaheadPromise || !!state.openAiSpeechLookaheadPrepared || audioPlaying;
 }
 
 function refreshSpeechUi() {
@@ -2166,6 +2310,8 @@ function resetSpeechAudioEl() {
     try {
         audioEl.pause();
         audioEl.currentTime = 0;
+        audioEl.defaultPlaybackRate = 1;
+        audioEl.playbackRate = 1;
     } catch {}
     audioEl.onplaying = null;
     audioEl.onended = null;
@@ -2176,6 +2322,14 @@ function resetSpeechAudioEl() {
     }
     audioEl.removeAttribute("src");
     try { audioEl.load(); } catch {}
+}
+
+function revokeQueuedPreparedSpeechAudio(entries = state.speechQueue) {
+    (entries || []).forEach((entry) => {
+        if (!entry?.preparedAudio?.audioUrl) return;
+        try { URL.revokeObjectURL(entry.preparedAudio.audioUrl); } catch {}
+        entry.preparedAudio = null;
+    });
 }
 
 function clearOpenAiSpeechLookahead() {
@@ -2195,11 +2349,15 @@ function clearOpenAiSpeechLookahead() {
 
 function stopSpeechPlayback(showMessage = false, { resolveCallbacks = true } = {}) {
     state.speechToken += 1;
+    revokeQueuedPreparedSpeechAudio();
     state.speechQueue = [];
+    state.wholeSpeechPendingTranscriptIndexes.clear();
+    clearAllWholeSpeechPreparations();
     state.speechProcessing = false;
     clearOpenAiSpeechLookahead();
     state.speechPlaybackActive = false;
     state.lastSpeechEndedAtMs = 0;
+    clearTimingTestAudioCache();
     state.timingTestMeasurements.clear();
     rejectCurrentSpeechPlayback();
     if (state.currentSpeechController) {
@@ -2264,6 +2422,26 @@ function chunkTextForSpeech(text, maxLen = SPEECH_CHUNK_MAX) {
     }
     if (current) chunks.push(current);
     return chunks;
+}
+
+function buildSpeechQueueEntries(kind, text, transcriptIndex = -1, voiceKey = "", options = {}) {
+    const normalized = normalizeSpeechText(text);
+    if (!normalized) return [];
+    const speechStartLeadMs = Math.max(0, Math.min(3000, Number(options.speechStartLeadMs) || 0));
+    const minimumHandoffGapMs = Math.max(0, Math.min(3000, Number(options.minimumHandoffGapMs) || 0));
+    const speechTextChunks = chunkTextForSpeech(normalized, SPEECH_CHUNK_MAX)
+    .map((textChunk) => textChunk.slice(0, MAX_TTS_CHARS))
+    .filter(Boolean);
+    return speechTextChunks.map((textChunk, chunkIndex) => ({
+        kind,
+        voiceKey: voiceKey || kind,
+        text: textChunk,
+        transcriptIndex,
+        chunkIndex,
+        chunkCount: speechTextChunks.length,
+        speechStartLeadMs: chunkIndex === 0 ? speechStartLeadMs : 0,
+        minimumHandoffGapMs: chunkIndex === 0 ? minimumHandoffGapMs : 0
+    }));
 }
 
 function ensureSentenceEnding(text, ending = ".") {
@@ -2344,6 +2522,147 @@ async function decodeSpeechAudioDuration(audioBytes, audioUrl) {
     });
 }
 
+function getWholeSpeechDescriptorForPhase(phase) {
+    if (!phase || !SPEECH_TIMING.isTimedSpokenPhase(phase)) return null;
+    if ((phase.kind === "speech" || phase.kind === "judgeAnswer") && isAiControlledRole(phase.speaker)) {
+        const kind = messageKindForRole(phase.speaker);
+        return { kind, voiceKey: kind };
+    }
+    return null;
+}
+
+function wholeSpeechPreparationMatches(record, phase, text, descriptor) {
+    return !!record
+        && record.phaseId === phase?.id
+        && record.matchRunId === state.matchRunId
+        && record.text === normalizeSpeechText(text)
+        && record.kind === descriptor?.kind
+        && record.voiceKey === descriptor?.voiceKey;
+}
+
+function releaseWholeSpeechPreparation(record) {
+    if (!record || record.consumed || record.released) return;
+    record.released = true;
+    (record.preparedChunks || []).forEach((item) => revokePreparedSpeechAudio(item?.prepared));
+    record.preparedChunks = [];
+}
+
+function clearWholeSpeechPreparation(phaseId) {
+    const record = state.wholeSpeechPreparations.get(phaseId);
+    if (!record) return;
+    state.wholeSpeechPreparations.delete(phaseId);
+    releaseWholeSpeechPreparation(record);
+}
+
+function clearAllWholeSpeechPreparations() {
+    const records = [...state.wholeSpeechPreparations.values()];
+    state.wholeSpeechPreparations.clear();
+    records.forEach(releaseWholeSpeechPreparation);
+}
+
+function prepareWholeSpeechAudioForPhase(phase, text, descriptor = getWholeSpeechDescriptorForPhase(phase)) {
+    const normalized = normalizeSpeechText(text);
+    if (TIMING_TEST_MODE || !phase?.id || !phase.duration || !normalized || !descriptor) return Promise.resolve(null);
+    const existing = state.wholeSpeechPreparations.get(phase.id);
+    if (wholeSpeechPreparationMatches(existing, phase, normalized, descriptor)) return existing.promise;
+    if (existing) clearWholeSpeechPreparation(phase.id);
+
+    const matchRunId = state.matchRunId;
+    const speechToken = state.speechToken;
+    const entries = buildSpeechQueueEntries(descriptor.kind, normalized, -1, descriptor.voiceKey, {
+        speechStartLeadMs: TIMED_SPEECH_TIMER_LEAD_MS
+    });
+    if (!entries.length) return Promise.resolve(null);
+
+    const record = {
+        phaseId: phase.id,
+        matchRunId,
+        text: normalized,
+        kind: descriptor.kind,
+        voiceKey: descriptor.voiceKey,
+        entries,
+        preparedChunks: [],
+        totalAudioDurationSeconds: 0,
+        plan: null,
+        consumed: false,
+        released: false,
+        promise: null
+    };
+    state.wholeSpeechPreparations.set(phase.id, record);
+
+    record.promise = (async () => {
+        let results = [];
+        try {
+            results = await SPEECH_TIMING.mapWithConcurrency(
+                entries,
+                WHOLE_SPEECH_TTS_CONCURRENCY,
+                async (entry) => {
+                    let prepared = null;
+                    try {
+                        prepared = await fetchOpenAiSpeechAudio(entry, speechToken, {
+                            controllerKind: "whole-speech-preload",
+                            trackController: false
+                        });
+                        if (!prepared) return { entry, cancelled: true };
+                        const decodedTiming = await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
+                        return { entry, prepared, decodedTiming };
+                    } catch (error) {
+                        return { entry, prepared, error };
+                    }
+                }
+            );
+
+            const isCurrent = state.wholeSpeechPreparations.get(phase.id) === record
+                && matchRunId === state.matchRunId
+                && speechToken === state.speechToken;
+            const failed = results.find((result) => result.error);
+            if (!isCurrent || results.some((result) => result.cancelled)) {
+                results.forEach((result) => revokePreparedSpeechAudio(result.prepared));
+                return null;
+            }
+            if (failed) {
+                results.forEach((result) => revokePreparedSpeechAudio(result.prepared));
+                throw failed.error;
+            }
+
+            record.preparedChunks = results;
+            record.totalAudioDurationSeconds = results.reduce(
+                (total, result) => total + Math.max(0, Number(result.decodedTiming?.durationSeconds) || 0),
+                0
+            );
+            record.plan = SPEECH_TIMING.planWholeSpeechPlayback({
+                audioDurationSeconds: record.totalAudioDurationSeconds,
+                timerLeadMs: TIMED_SPEECH_TIMER_LEAD_MS,
+                timerBudgetSeconds: phase.duration,
+                minimumPlaybackRate: WHOLE_SPEECH_MIN_PLAYBACK_RATE,
+                maximumPlaybackRate: WHOLE_SPEECH_MAX_PLAYBACK_RATE
+            });
+            console.info(`[speech-rate-plan] ${JSON.stringify({
+                phaseId: phase.id,
+                naturalAudioSeconds: Number(record.totalAudioDurationSeconds.toFixed(2)),
+                playbackRate: Number(record.plan.playbackRate.toFixed(4)),
+                projectedClockSeconds: Number(record.plan.projectedTimerConsumedSeconds.toFixed(2))
+            })}`);
+            return record;
+        } catch (error) {
+            results.forEach((result) => revokePreparedSpeechAudio(result.prepared));
+            if (state.wholeSpeechPreparations.get(phase.id) === record) {
+                state.wholeSpeechPreparations.delete(phase.id);
+            }
+            throw error;
+        }
+    })();
+    return record.promise;
+}
+
+function primeWholeSpeechAudioForPhase(phase, text) {
+    const descriptor = getWholeSpeechDescriptorForPhase(phase);
+    if (!descriptor) return;
+    void prepareWholeSpeechAudioForPhase(phase, text, descriptor).catch((error) => {
+        console.warn(`Whole-speech audio preparation failed for ${phase.id}; playback will retry.`, error);
+    });
+}
+
 function recordTimingTestSpeechChunk(prepared, decodedTiming) {
     if (!TIMING_TEST_MODE || !prepared?.entry || !decodedTiming) return null;
     const entry = prepared.entry;
@@ -2359,6 +2678,7 @@ function recordTimingTestSpeechChunk(prepared, decodedTiming) {
             audioDurationSeconds: 0,
             timerLeadMs: 0,
             decodeMethods: new Set(),
+            audioChunks: new Array(chunkCount),
             fastForwarded: getTimingTestFastForwardForMessage(transcriptIndex)
         };
         state.timingTestMeasurements.set(transcriptIndex, measurement);
@@ -2368,12 +2688,43 @@ function recordTimingTestSpeechChunk(prepared, decodedTiming) {
     measurement.audioDurationSeconds += decodedTiming.durationSeconds;
     measurement.timerLeadMs += Math.max(0, Number(entry.speechStartLeadMs) || 0);
     measurement.decodeMethods.add(decodedTiming.method);
+    const chunkIndex = Math.max(0, Math.min(chunkCount - 1, Math.round(Number(entry.chunkIndex) || 0)));
+    measurement.audioChunks[chunkIndex] = {
+        audioUrl: prepared.audioUrl,
+        mimeType: prepared.mimeType,
+        text: entry.text
+    };
+    prepared.retainedForTimingPreview = true;
     if (measurement.measuredChunks < measurement.chunkCount) return null;
 
     state.timingTestMeasurements.delete(transcriptIndex);
     const message = state.transcript[transcriptIndex] || {};
     const phase = getPhaseById(message.phaseId);
-    if (!SPEECH_TIMING.shouldReportTimedMessage(message, phase)) return null;
+    if (!SPEECH_TIMING.shouldReportTimedMessage(message, phase)) {
+        revokeTimingTestAudioChunks(measurement.audioChunks);
+        return null;
+    }
+
+    const wordCount = countWords(message.text);
+    const naturalSummary = SPEECH_TIMING.summarizeTimedSpeech({
+        audioDurationSeconds: measurement.audioDurationSeconds,
+        timerLeadMs: measurement.timerLeadMs,
+        timerBudgetSeconds: phase.duration,
+        wordCount
+    });
+    const playbackPlan = SPEECH_TIMING.planWholeSpeechPlayback({
+        audioDurationSeconds: measurement.audioDurationSeconds,
+        timerLeadMs: measurement.timerLeadMs,
+        timerBudgetSeconds: phase.duration,
+        minimumPlaybackRate: WHOLE_SPEECH_MIN_PLAYBACK_RATE,
+        maximumPlaybackRate: WHOLE_SPEECH_MAX_PLAYBACK_RATE
+    });
+    const adjustedSummary = SPEECH_TIMING.summarizeTimedSpeech({
+        audioDurationSeconds: playbackPlan.projectedPlaybackSeconds,
+        timerLeadMs: measurement.timerLeadMs,
+        timerBudgetSeconds: phase.duration,
+        wordCount
+    });
 
     const result = {
         transcriptIndex,
@@ -2382,13 +2733,11 @@ function recordTimingTestSpeechChunk(prepared, decodedTiming) {
         label: message.label || l("Speaker", "Oratrice"),
         chunkCount: measurement.chunkCount,
         decodeMethods: [...measurement.decodeMethods],
+        audioChunks: measurement.audioChunks,
         fastForwarded: measurement.fastForwarded,
-        summary: SPEECH_TIMING.summarizeTimedSpeech({
-            audioDurationSeconds: measurement.audioDurationSeconds,
-            timerLeadMs: measurement.timerLeadMs,
-            timerBudgetSeconds: phase.duration,
-            wordCount: countWords(message.text)
-        })
+        naturalSummary,
+        playbackPlan,
+        summary: adjustedSummary
     };
     state.timingTestResults.push(result);
     console.info(`[timing-test-result] ${JSON.stringify({
@@ -2396,12 +2745,14 @@ function recordTimingTestSpeechChunk(prepared, decodedTiming) {
         phaseTitle: result.phaseTitle,
         label: result.label,
         words: result.summary.wordCount,
-        audioSeconds: Number(result.summary.audioDurationSeconds.toFixed(2)),
+        naturalAudioSeconds: Number(result.naturalSummary.audioDurationSeconds.toFixed(2)),
+        playbackRate: Number(result.playbackPlan.playbackRate.toFixed(4)),
+        adjustedAudioSeconds: Number(result.summary.audioDurationSeconds.toFixed(2)),
         clockSeconds: Number(result.summary.timerConsumedSeconds.toFixed(2)),
         budgetSeconds: result.summary.timerBudgetSeconds,
         remainingSeconds: Number(result.summary.remainingSeconds.toFixed(2)),
         overrunSeconds: Number(result.summary.overrunSeconds.toFixed(2)),
-        wordsPerMinute: Number(result.summary.wordsPerMinute.toFixed(1)),
+        adjustedWordsPerMinute: Number(result.summary.wordsPerMinute.toFixed(1)),
         chunks: result.chunkCount,
         fastForwarded: result.fastForwarded
     })}`);
@@ -2430,12 +2781,12 @@ function showFastForwardedTimingOnTimer(result) {
     timerDisplayEl.textContent = formatClock(state.timer.remaining);
     timerHintEl.textContent = result.summary.overrunSeconds > 0
         ? l(
-            `Fast-forward result: ${formatPreciseDuration(result.summary.overrunSeconds)} over time.`,
-            `Résultat en avance rapide : dépassement de ${formatPreciseDuration(result.summary.overrunSeconds)}.`
+            `Virtual ${result.playbackPlan.playbackRate.toFixed(3)}× result: ${formatPreciseDuration(result.summary.overrunSeconds)} over time.`,
+            `Résultat virtuel à ${result.playbackPlan.playbackRate.toFixed(3)}× : dépassement de ${formatPreciseDuration(result.summary.overrunSeconds)}.`
         )
         : l(
-            `Fast-forward result: ${formatPreciseDuration(result.summary.remainingSeconds)} left.`,
-            `Résultat en avance rapide : ${formatPreciseDuration(result.summary.remainingSeconds)} restant.`
+            `Virtual ${result.playbackPlan.playbackRate.toFixed(3)}× result: ${formatPreciseDuration(result.summary.remainingSeconds)} left.`,
+            `Résultat virtuel à ${result.playbackPlan.playbackRate.toFixed(3)}× : ${formatPreciseDuration(result.summary.remainingSeconds)} restant.`
         );
 }
 
@@ -2446,8 +2797,13 @@ function createLocalAbortError() {
 }
 
 async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct", trackController = true } = {}) {
-    if (!hasCredential("openai")) throw new Error(l("An OpenAI credential is required for OpenAI read-aloud.", "Un identifiant OpenAI est requis pour la lecture OpenAI."));
     if (token !== state.speechToken) return null;
+    if (entry?.preparedAudio?.audioUrl) {
+        const preparedAudio = entry.preparedAudio;
+        entry.preparedAudio = null;
+        return { ...preparedAudio, entry };
+    }
+    if (!hasCredential("openai")) throw new Error(l("An OpenAI credential is required for OpenAI read-aloud.", "Un identifiant OpenAI est requis pour la lecture OpenAI."));
     const controller = new AbortController();
     if (trackController) {
         state.currentSpeechController = controller;
@@ -2492,6 +2848,14 @@ async function playPreparedOpenAiSpeechChunk(prepared, token) {
     }
     state.currentAudioUrl = prepared.audioUrl;
     audioEl.src = prepared.audioUrl;
+    const requestedPlaybackRate = Number(prepared.entry?.playbackRate);
+    const playbackRate = Number.isFinite(requestedPlaybackRate) && requestedPlaybackRate > 0
+        ? Math.min(WHOLE_SPEECH_MAX_PLAYBACK_RATE, Math.max(WHOLE_SPEECH_MIN_PLAYBACK_RATE, requestedPlaybackRate))
+        : 1;
+    audioEl.defaultPlaybackRate = playbackRate;
+    audioEl.playbackRate = playbackRate;
+    if ("preservesPitch" in audioEl) audioEl.preservesPitch = true;
+    if ("webkitPreservesPitch" in audioEl) audioEl.webkitPreservesPitch = true;
     state.speechPlaybackActive = true;
     refreshSpeechUi();
     queueSpeechFollowScroll(true);
@@ -2672,7 +3036,7 @@ async function processConcurrentTimingTestSpeech(entries, token) {
         freezeTimerForFastForwardedSpeech(prepared.entry);
         showFastForwardedTimingOnTimer(timingTestResult);
         markSpeechChunkComplete(prepared.entry.transcriptIndex);
-        revokePreparedSpeechAudio(prepared);
+        if (!prepared.retainedForTimingPreview) revokePreparedSpeechAudio(prepared);
     });
     refreshSpeechUi();
     await waitMs(0);
@@ -2755,25 +3119,93 @@ async function processSpeechQueue(token = state.speechToken) {
     }
 }
 
+function enqueuePreparedWholeSpeech(kind, text, transcriptIndex, voiceKey, options, phase) {
+    const descriptor = { kind, voiceKey: voiceKey || kind };
+    const enqueueToken = state.speechToken;
+    const enqueueRunId = state.matchRunId;
+    state.wholeSpeechPendingTranscriptIndexes.add(transcriptIndex);
+    ensureSpeechUi();
+    refreshSpeechUi();
+
+    void prepareWholeSpeechAudioForPhase(phase, text, descriptor)
+    .then((record) => {
+        if (!record) return;
+        const message = state.transcript[transcriptIndex];
+        const isCurrent = enqueueToken === state.speechToken
+            && enqueueRunId === state.matchRunId
+            && normalizeSpeechText(message?.text) === normalizeSpeechText(text)
+            && message?.phaseId === phase.id;
+        if (!isCurrent) {
+            clearWholeSpeechPreparation(phase.id);
+            return;
+        }
+
+        const entries = buildSpeechQueueEntries(kind, text, transcriptIndex, voiceKey, options);
+        const chunksMatch = entries.length === record.preparedChunks.length
+            && entries.every((entry, index) => entry.text === record.preparedChunks[index]?.entry?.text);
+        if (!chunksMatch) {
+            clearWholeSpeechPreparation(phase.id);
+            throw new Error("Prepared whole-speech audio no longer matches the queued speech text.");
+        }
+
+        const timerLeadMs = entries.reduce(
+            (total, entry) => total + Math.max(0, Number(entry.speechStartLeadMs) || 0),
+            0
+        );
+        const plan = SPEECH_TIMING.planWholeSpeechPlayback({
+            audioDurationSeconds: record.totalAudioDurationSeconds,
+            timerLeadMs,
+            timerBudgetSeconds: phase.duration,
+            minimumPlaybackRate: WHOLE_SPEECH_MIN_PLAYBACK_RATE,
+            maximumPlaybackRate: WHOLE_SPEECH_MAX_PLAYBACK_RATE
+        });
+
+        if (state.wholeSpeechPreparations.get(phase.id) === record) {
+            state.wholeSpeechPreparations.delete(phase.id);
+        }
+        record.consumed = true;
+        entries.forEach((entry, index) => {
+            const prepared = record.preparedChunks[index].prepared;
+            entry.playbackRate = plan.playbackRate;
+            entry.preparedAudio = {
+                audioUrl: prepared.audioUrl,
+                audioBytes: prepared.audioBytes,
+                mimeType: prepared.mimeType
+            };
+        });
+        record.preparedChunks = [];
+
+        trackSpeechChunksForMessage(transcriptIndex, entries.length);
+        state.speechQueue.push(...entries);
+        refreshSpeechUi();
+        void processSpeechQueue(enqueueToken);
+    })
+    .catch((error) => {
+        if (enqueueToken !== state.speechToken || enqueueRunId !== state.matchRunId) return;
+        handleOpenAiSpeechFailure(error, enqueueToken);
+    })
+    .finally(() => {
+        state.wholeSpeechPendingTranscriptIndexes.delete(transcriptIndex);
+        refreshSpeechUi();
+    });
+}
+
 function enqueueTranscriptSpeech(kind, text, transcriptIndex = -1, voiceKey = "", options = {}) {
     if (!AUTO_SPEAK_MESSAGE_KINDS.has(kind)) return;
     const normalized = normalizeSpeechText(text);
     if (!normalized) return;
-    const speechStartLeadMs = Math.max(0, Math.min(3000, Number(options.speechStartLeadMs) || 0));
-    const minimumHandoffGapMs = Math.max(0, Math.min(3000, Number(options.minimumHandoffGapMs) || 0));
-    const speechTextChunks = chunkTextForSpeech(normalized, SPEECH_CHUNK_MAX)
-    .map((textChunk) => textChunk.slice(0, MAX_TTS_CHARS))
-    .filter(Boolean);
-    const chunks = speechTextChunks.map((textChunk, chunkIndex) => ({
-        kind,
-        voiceKey: voiceKey || kind,
-        text: textChunk,
-        transcriptIndex,
-        chunkIndex,
-        chunkCount: speechTextChunks.length,
-        speechStartLeadMs: chunkIndex === 0 ? speechStartLeadMs : 0,
-        minimumHandoffGapMs: chunkIndex === 0 ? minimumHandoffGapMs : 0
-    }));
+    const phase = getPhaseById(options.phaseId);
+    const descriptor = getWholeSpeechDescriptorForPhase(phase);
+    const usePreparedWholeSpeech = !TIMING_TEST_MODE
+        && !!descriptor
+        && descriptor.kind === kind
+        && descriptor.voiceKey === (voiceKey || kind);
+    if (usePreparedWholeSpeech) {
+        enqueuePreparedWholeSpeech(kind, normalized, transcriptIndex, voiceKey, options, phase);
+        return;
+    }
+
+    const chunks = buildSpeechQueueEntries(kind, normalized, transcriptIndex, voiceKey, options);
     if (!chunks.length) {
         finalizeSpeechPlaybackForMessage(transcriptIndex);
         return;
@@ -3041,6 +3473,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
                 state.aiPreparedTurns[phaseId] = { text, preparedAt: new Date().toISOString(), passCount: totalPasses };
                 clearAiPreparationSnapshot(phaseId);
                 delete state.aiPreparationErrors[phaseId];
+                primeWholeSpeechAudioForPhase(phase, text);
                 maybeCompletePreparedAiConferral();
                 return text;
             }
@@ -3066,6 +3499,7 @@ async function maybePrepareAiTurnForPhase(phase, options = {}) {
             state.aiPreparedTurns[phaseId] = { text, preparedAt: new Date().toISOString(), passCount: totalPasses };
             clearAiPreparationSnapshot(phaseId);
             delete state.aiPreparationErrors[phaseId];
+            primeWholeSpeechAudioForPhase(phase, text);
             maybeCompletePreparedAiConferral();
             return text;
         } catch (error) {
@@ -3135,6 +3569,28 @@ function primeAiJudgeQuestionPreparationForPhase(phase) {
     });
 }
 
+function primeNextFinalJudgeQuestionAndAnswerAfterTurn(phase) {
+    if (!phase || state.judgeMode !== "ai") return null;
+    const questionTarget = getAiJudgeQuestionPreparationTarget(phase);
+    if (!questionTarget) return null;
+    const runId = state.matchRunId;
+
+    // The completed turn is already in the transcript when this runs. Finalize
+    // the next question against that text, lock it, and only then prepare its
+    // answer and exact whole-answer playback rate.
+    void maybePrepareAiJudgeQuestion(questionTarget.caseNum, questionTarget.judgeNumber)
+    .then((question) => {
+        const finalQuestion = sanitizeText(question);
+        if (!finalQuestion || runId !== state.matchRunId || state.completed) return;
+        storeJudgeQuestionForPhase(questionTarget, finalQuestion);
+        primeAiJudgeAnswerForFinalQuestion(questionTarget);
+    })
+    .catch((error) => {
+        console.error("Early final judge-question and answer preparation failed:", error);
+    });
+    return questionTarget;
+}
+
 function primeCurrentAiJudgeQuestionRevision(phase) {
     if (!phase || state.judgeMode !== "ai" || phase.kind !== "judgeQuestion") return;
     const phaseId = phase.id;
@@ -3145,11 +3601,7 @@ function primeCurrentAiJudgeQuestionRevision(phase) {
         const finalQuestion = sanitizeText(question);
         if (!finalQuestion || runId !== state.matchRunId || !current || current.id !== phaseId || state.completed) return;
         storeJudgeQuestionForPhase(phase, finalQuestion);
-        const answerTarget = getJudgeAnswerTargetForQuestionPhase(phase);
-        if (!answerTarget || !isAiControlledRole(answerTarget.speaker)) return;
-        void maybePrepareAiTurnForPhase(answerTarget).catch((error) => {
-            console.error("Early AI judge-answer preparation failed:", error);
-        });
+        primeAiJudgeAnswerForFinalQuestion(phase);
     })
     .catch((error) => {
         console.error("AI judge-question revision failed:", error);
@@ -3403,6 +3855,7 @@ function appendHumanTurnMessage(phase, text) {
     const cleanText = sanitizeText(text);
     if (!phase || !cleanText) return false;
     appendParticipantMessage("human", cleanText, { caseNum: phase.caseNum || 0, phaseId: phase.id });
+    primeNextFinalJudgeQuestionAndAnswerAfterTurn(phase);
     primeAiFinalScoringAfterFinalTurn(phase);
     messageInputEl.value = "";
     return true;
@@ -3415,18 +3868,13 @@ function appendHumanJudgeQuestionMessage(phase, text) {
     const name = sanitizeText(judge.name.value) || judgeLabel(judge.number);
     judge.question.value = cleanText;
     storeJudgeQuestionForPhase(phase, cleanText);
+    primeAiJudgeAnswerForFinalQuestion(phase);
     appendMessage("judge", name, cleanText, {
         caseNum: phase.caseNum,
             phaseId: phase.id,
             judgeNumber: judge.number,
             silent: true
     });
-    const preparedAnswerTarget = getJudgeAnswerTargetForQuestionPhase(phase);
-    if (preparedAnswerTarget && isAiControlledRole(preparedAnswerTarget.speaker)) {
-        void maybePrepareAiTurnForPhase(preparedAnswerTarget).catch((error) => {
-            console.error("AI judge-answer preparation failed:", error);
-        });
-    }
     judge.question.value = "";
     messageInputEl.value = "";
     clearMainComposerJudgeBinding();
@@ -3985,6 +4433,30 @@ function getJudgeAnswerTargetForQuestionPhase(phase) {
     return state.phases.find((item) => item.kind === "judgeAnswer" && item.caseNum === phase.caseNum && item.judgeNumber === phase.judgeNumber) || null;
 }
 
+function primeAiJudgeAnswerForFinalQuestion(phase) {
+    const answerTarget = getJudgeAnswerTargetForQuestionPhase(phase);
+    if (!answerTarget || !isAiControlledRole(answerTarget.speaker)) return null;
+
+    const finalQuestion = sanitizeText(
+        state.askedJudgeQuestions[phase.id] ||
+        state.askedJudgeQuestions[answerTarget.id] || ""
+    );
+    if (!finalQuestion) return null;
+
+    // Start answer generation and exact whole-answer audio measurement only
+    // after the final question has been locked and stored.
+    void maybePrepareAiTurnForPhase(answerTarget)
+    .then((text) => {
+        const cleanText = sanitizeText(text);
+        if (!cleanText) return null;
+        return prepareWholeSpeechAudioForPhase(answerTarget, cleanText);
+    })
+    .catch((error) => {
+        console.error("AI judge-answer preparation from the final question failed:", error);
+    });
+    return answerTarget;
+}
+
 function getJudgeQuestionForAnswerPhase(phase) {
     if (!phase || phase.kind !== "judgeAnswer") return "";
     return sanitizeText(
@@ -4010,6 +4482,7 @@ function storeJudgeQuestionForPhase(phase, question) {
         delete state.aiPreparedTurns[answerPhaseId];
         clearAiPreparationSnapshot(answerPhaseId);
         delete state.aiPreparationErrors[answerPhaseId];
+        clearWholeSpeechPreparation(answerPhaseId);
     }
     const prepKey = getAiJudgeQuestionPreparationKey(phase.caseNum, phase.judgeNumber);
     delete state.aiJudgeQuestionPreparationPromises[prepKey];
@@ -4503,11 +4976,25 @@ async function handleAiConferPhase(phase) {
     try {
         const text = sanitizeText(await maybePrepareAiTurnForPhase(targetPhase, { revisionPasses: 1 }));
         if (!text) throw new Error(l("The model returned no text.", "Le modèle n’a renvoyé aucun texte."));
-        const current = getCurrentPhase();
-        if (!current || current.id !== phaseId || state.completed) {
+        let current = getCurrentPhase();
+        if (!current || current.id !== phaseId || !state.phaseReady || state.completed) {
             setStatus(isFrenchLocale() ? `Le caucus de ${speaker} s’est terminé après le changement de phase.` : `${speaker}'s conferral finished after the phase had already moved on.`);
             return false;
         }
+
+        setStatus(isFrenchLocale()
+            ? `Calcul de la durée audio et du débit global de ${speaker} pendant le caucus...`
+            : `Measuring ${speaker}'s audio and calculating one whole-speech rate during conferral...`);
+        const preparedSpeech = await prepareWholeSpeechAudioForPhase(targetPhase, text);
+        current = getCurrentPhase();
+        if (!current || current.id !== phaseId || !state.phaseReady || state.completed) {
+            setStatus(isFrenchLocale() ? `Le calcul audio de ${speaker} s’est terminé après la fin du caucus.` : `${speaker}'s audio calculation finished after conferral had already ended.`);
+            return false;
+        }
+        if (!TIMING_TEST_MODE && !preparedSpeech) {
+            throw new Error(l("The prepared speech audio could not be measured.", "L’audio préparé de la prise de parole n’a pas pu être mesuré."));
+        }
+
         setPhaseAwaitingPlayback(phaseId);
         appendParticipantMessage(phase.speaker, l("I yield my time", "Je cède mon temps"), {
             caseNum: phase.caseNum,
@@ -4581,6 +5068,7 @@ async function generateAiTurnForPhase(phase, options = {}) {
                     advancePhase();
                 }
         });
+        primeNextFinalJudgeQuestionAndAnswerAfterTurn(phase);
         if (!duringModerator) setStatus(isFrenchLocale() ? `${speaker} a terminé.` : `${speaker} has finished.`);
         return true;
     } catch (error) {
@@ -4626,6 +5114,7 @@ async function askAiJudgeQuestion(phase) {
         const finalQuestion = sanitizeText(question);
         if (!finalQuestion) throw new Error(isFrenchLocale() ? `La question du juge IA ${phase.judgeNumber} manquait.` : `AI judge question ${phase.judgeNumber} was missing.`);
         storeJudgeQuestionForPhase(phase, finalQuestion);
+        const preparedAnswerTarget = primeAiJudgeAnswerForFinalQuestion(phase);
         setPhaseAwaitingPlayback(phaseId);
         appendMessage("judge", judgeLabel(phase.judgeNumber), finalQuestion, {
             caseNum: phase.caseNum,
@@ -4639,17 +5128,19 @@ async function askAiJudgeQuestion(phase) {
                     const activePhase = getCurrentPhase();
                     if (!activePhase || activePhase.id !== phaseId || state.completed) return;
                     if (state.phaseAwaitingPlaybackForId !== phaseId) return;
+                    // Do not spend leftover question time waiting for answer
+                    // preparation. Continue it under the next announcement.
                     clearPhaseAwaitingPlayback(phaseId);
                     advancePhase();
                 }
         });
-        const preparedAnswerTarget = getJudgeAnswerTargetForQuestionPhase(phase);
-        if (preparedAnswerTarget && isAiControlledRole(preparedAnswerTarget.speaker)) {
-            void maybePrepareAiTurnForPhase(preparedAnswerTarget).catch((error) => {
-                console.error("AI judge-answer preparation failed:", error);
-            });
-        }
-        setStatus(isFrenchLocale() ? `${judgeLabel(phase.judgeNumber)} a posé sa question.` : `${judgeLabel(phase.judgeNumber)} has asked a question.`);
+        setStatus(preparedAnswerTarget
+            ? isFrenchLocale()
+                ? `${judgeLabel(phase.judgeNumber)} pose sa question pendant la préparation de la réponse de ${speakerName(preparedAnswerTarget.speaker)}.`
+                : `${judgeLabel(phase.judgeNumber)} is asking while ${speakerName(preparedAnswerTarget.speaker)}'s answer is prepared in parallel.`
+            : isFrenchLocale()
+            ? `${judgeLabel(phase.judgeNumber)} a posé sa question.`
+            : `${judgeLabel(phase.judgeNumber)} has asked a question.`);
         return true;
     } catch (error) {
         console.error(error);
@@ -5256,8 +5747,12 @@ function resetStateForNewMatch() {
     state.speechChunkCounts = new Map();
     state.speechStartCallbacks = new Map();
     state.speechCompletionCallbacks = new Map();
+    state.wholeSpeechPreparations = new Map();
+    state.wholeSpeechPendingTranscriptIndexes = new Set();
     state.timingTestMeasurements = new Map();
     state.timingTestResults = [];
+    state.timingPreviewTranscriptIndex = -1;
+    state.timingPreviewResolve = null;
     state.participantTypes = {
         human: normalizeParticipantMode(participantOneTypeSelectEl?.value || "human"),
         ai: "ai"

@@ -157,6 +157,7 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
             retryStatuses: RETRY_STATUSES,
             sleep,
             requestTimeoutMs,
+            retryTimeouts: true,
             consumeResponse: async (response) => {
                 if (!response.ok) throw await createApiError(response);
                 const buffer = await response.arrayBuffer();

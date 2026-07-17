@@ -182,6 +182,42 @@ test("OpenAI speech retries an interrupted audio download without changing the r
     assert.deepEqual([...result.bytes], [40, 50, 60]);
 });
 
+test("OpenAI speech retries one timed-out request", async () => {
+    let callCount = 0;
+    const delays = [];
+    const adapter = createOpenAiAdapter({
+        fetchImpl: async (_url, options) => {
+            callCount += 1;
+            if (callCount === 1) {
+                return new Promise((_, reject) => {
+                    options.signal.addEventListener("abort", () => {
+                        const error = new Error("aborted");
+                        error.name = "AbortError";
+                        reject(error);
+                    }, { once: true });
+                });
+            }
+            return new Response(Uint8Array.from([70, 80, 90]), {
+                status: 200,
+                headers: { "content-type": "audio/mpeg" }
+            });
+        },
+        sleep: async (delay) => delays.push(delay),
+        requestTimeoutMs: 5
+    });
+
+    const result = await adapter.speech({
+        model: "tts-1-hd",
+        voice: "alloy",
+        input: "Retry this timed-out speech chunk.",
+        responseFormat: "mp3"
+    }, "openai-test-value");
+
+    assert.equal(callCount, 2);
+    assert.deepEqual(delays, [350]);
+    assert.deepEqual([...result.bytes], [70, 80, 90]);
+});
+
 test("OpenAI speech bounds retries when every audio download is interrupted", async () => {
     let callCount = 0;
     const delays = [];

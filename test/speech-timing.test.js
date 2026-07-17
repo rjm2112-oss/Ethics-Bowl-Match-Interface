@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const {
     isTimedSpokenPhase,
     mapWithConcurrency,
+    planWholeSpeechPlayback,
     shouldReportTimedMessage,
     summarizeTimedSpeech
 } = require("../src/shared/speech-timing");
@@ -53,6 +54,40 @@ test("moderator announcements and judge questions never create timing-result car
     assert.equal(shouldReportTimedMessage({ kind: "ai" }, presentation), true);
     assert.equal(shouldReportTimedMessage({ kind: "judge" }, judgeQuestion), false);
     assert.equal(shouldReportTimedMessage({ kind: "ai" }, { kind: "confer", duration: 180 }), false);
+});
+
+test("whole-speech playback uses one rate that targets the available clock time", () => {
+    const result = planWholeSpeechPlayback({
+        audioDurationSeconds: 285,
+        timerLeadMs: 350,
+        timerBudgetSeconds: 300,
+        minimumPlaybackRate: 0.924,
+        maximumPlaybackRate: 1.09
+    });
+
+    assert.ok(Math.abs(result.rawPlaybackRate - (285 / 299.65)) < 1e-12);
+    assert.equal(result.playbackRate, result.rawPlaybackRate);
+    assert.ok(Math.abs(result.projectedTimerConsumedSeconds - 300) < 1e-9);
+});
+
+test("whole-speech playback clamps short and long audio to the universal rate range", () => {
+    const short = planWholeSpeechPlayback({
+        audioDurationSeconds: 250,
+        timerBudgetSeconds: 300,
+        minimumPlaybackRate: 0.924,
+        maximumPlaybackRate: 1.09
+    });
+    const long = planWholeSpeechPlayback({
+        audioDurationSeconds: 360,
+        timerBudgetSeconds: 300,
+        minimumPlaybackRate: 0.924,
+        maximumPlaybackRate: 1.09
+    });
+
+    assert.equal(short.playbackRate, 0.924);
+    assert.equal(long.playbackRate, 1.09);
+    assert.ok(short.projectedSignedRemainingSeconds > 0);
+    assert.ok(long.projectedSignedRemainingSeconds < 0);
 });
 
 test("concurrent timing work is bounded and returned in original chunk order", async () => {
