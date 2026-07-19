@@ -882,7 +882,7 @@ function updateApiKeyStatusUi() {
         apiKeyStatusBadgeEl.textContent = l(`${ready} configured • ${missing} not configured`, `${ready} configuré • ${missing} non configuré`);
         apiKeyStatusBadgeEl.className = "status-chip subtle";
     } else {
-        apiKeyStatusBadgeEl.textContent = l("AI credentials required", "Identifiants IA requis");
+        apiKeyStatusBadgeEl.textContent = l("No AI providers configured", "Aucun fournisseur d’IA configuré");
         apiKeyStatusBadgeEl.className = "status-chip inactive";
     }
     apiKeyStatusBadgeEl.title = l("Open the credential panel to save, replace, or remove provider keys.", "Ouvrez le panneau d’identifiants pour enregistrer, remplacer ou supprimer les clés des fournisseurs.");

@@ -262,6 +262,10 @@ h2 {
     margin-bottom: 20px;
 }
 
+.status-strip {
+    justify-content: center;
+}
+
 .status-chip {
     border: 1px solid rgba(219, 196, 139, 0.26);
     background: rgba(35, 18, 59, 0.82);
