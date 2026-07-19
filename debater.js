@@ -374,7 +374,6 @@ const humanNameInputEl = document.getElementById("humanNameInput");
 const aiNameInputEl = document.getElementById("aiNameInput");
 const coinCallSelectEl = document.getElementById("coinCallSelect");
 const judgeModeSelectEl = document.getElementById("judgeModeSelect");
-const voiceModeSelectEl = document.getElementById("voiceModeSelect");
 const moderatorReadFullCaseSelectEl = document.getElementById("moderatorReadFullCaseSelect");
 const modelSelectEl = document.getElementById("modelSelect");
 
@@ -6211,7 +6210,7 @@ function refreshControls() {
 
     [
         participantOneTypeSelectEl, participantOneModelSelectEl, humanNameInputEl, aiNameInputEl, coinCallSelectEl,
-        judgeModeSelectEl, voiceModeSelectEl, moderatorReadFullCaseSelectEl, modelSelectEl, case1TitleInputEl, case1QuestionInputEl, case1TextInputEl,
+        judgeModeSelectEl, moderatorReadFullCaseSelectEl, modelSelectEl, case1TitleInputEl, case1QuestionInputEl, case1TextInputEl,
         case2TitleInputEl, case2QuestionInputEl, case2TextInputEl
     ].forEach((el) => {
         if (!el) return;
@@ -6499,7 +6498,7 @@ messageInputEl.addEventListener("input", () => {
 
 [
     participantOneTypeSelectEl, participantOneModelSelectEl, humanNameInputEl, aiNameInputEl, coinCallSelectEl,
-judgeModeSelectEl, voiceModeSelectEl, moderatorReadFullCaseSelectEl, modelSelectEl, case1TitleInputEl, case1QuestionInputEl, case1TextInputEl,
+judgeModeSelectEl, moderatorReadFullCaseSelectEl, modelSelectEl, case1TitleInputEl, case1QuestionInputEl, case1TextInputEl,
 case2TitleInputEl, case2QuestionInputEl, case2TextInputEl,
 ...judgeInputs.flatMap((judge) => [judge.name, judge.question, judge.humanScore, judge.aiScore, judge.comment])
 ].forEach((el) => {
