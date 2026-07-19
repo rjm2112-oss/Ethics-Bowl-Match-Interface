@@ -375,6 +375,7 @@ const aiNameInputEl = document.getElementById("aiNameInput");
 const coinCallSelectEl = document.getElementById("coinCallSelect");
 const judgeModeSelectEl = document.getElementById("judgeModeSelect");
 const voiceModeSelectEl = document.getElementById("voiceModeSelect");
+const moderatorReadFullCaseSelectEl = document.getElementById("moderatorReadFullCaseSelect");
 const modelSelectEl = document.getElementById("modelSelect");
 
 const case1TitleInputEl = document.getElementById("case1TitleInput");
@@ -503,6 +504,7 @@ const state = {
         2: { title: "", question: "", text: "" }
     },
     judgeMode: "ai",
+    moderatorReadsFullCase: false,
     judgeQuestionCache: { 1: [], 2: [] },
     aiJudgeQuestionDraftCache: { 1: [], 2: [] },
     lastJudgeQuestionByCase: { 1: "", 2: "" },
@@ -1914,6 +1916,7 @@ function saveSetup() {
         aiName: aiNameInputEl.value,
         coinCall: coinCallSelectEl.value,
         judgeMode: judgeModeSelectEl.value,
+        moderatorReadFullCase: moderatorReadFullCaseSelectEl.value,
         participantOneModel: normalizeMatchModel(participantOneModelSelectEl?.value),
         participantTwoModel: normalizeMatchModel(modelSelectEl?.value),
         case1Title: case1TitleInputEl.value,
@@ -1936,6 +1939,7 @@ function saveSetup() {
 
 function loadSetup() {
     if (participantOneTypeSelectEl) participantOneTypeSelectEl.value = "human";
+    moderatorReadFullCaseSelectEl.value = "no";
     populateAllMatchModelSelects();
     try {
         const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.setup) || "{}");
@@ -1945,6 +1949,7 @@ function loadSetup() {
             if (typeof parsed.aiName === "string") aiNameInputEl.value = parsed.aiName;
             if (typeof parsed.coinCall === "string") coinCallSelectEl.value = parsed.coinCall;
             if (typeof parsed.judgeMode === "string") judgeModeSelectEl.value = parsed.judgeMode;
+            if (parsed.moderatorReadFullCase === "yes") moderatorReadFullCaseSelectEl.value = "yes";
             participantOneModelSelectEl.value = normalizeMatchModel(parsed.participantOneModel || DEFAULT_PARTICIPANT_MODEL);
             modelSelectEl.value = normalizeMatchModel(parsed.participantTwoModel || DEFAULT_PARTICIPANT_MODEL);
             if (typeof parsed.case1Title === "string") case1TitleInputEl.value = parsed.case1Title;
@@ -5784,6 +5789,7 @@ function resetStateForNewMatch() {
         human: normalizeMatchModel(participantOneModelSelectEl?.value || DEFAULT_PARTICIPANT_MODEL),
         ai: normalizeMatchModel(modelSelectEl?.value || DEFAULT_PARTICIPANT_MODEL)
     };
+    state.moderatorReadsFullCase = moderatorReadFullCaseSelectEl?.value === "yes";
     state.judgeModel = DEFAULT_JUDGE_MODEL;
     resetLiveSpeechState();
     resetVoiceCaptureState();
@@ -5933,6 +5939,12 @@ function phaseAnnouncementText(phase) {
         const leader = speakerName(state.leadByCase[phase.caseNum]);
         const responder = speakerName(otherRole(state.leadByCase[phase.caseNum]));
         const moderatorQuestion = ensureSentenceEnding(caseData.question, "?");
+        if (state.moderatorReadsFullCase) {
+            const fullCaseText = ensureSentenceEnding(caseData.text);
+            return isFrenchLocale()
+            ? `Nous sommes maintenant prêtes à commencer le ${caseLabel(phase.caseNum)}. Le cas s’intitule « ${caseData.title} ». Je vais maintenant lire le cas au complet. ${fullCaseText} La question est : ${moderatorQuestion} ${leader} mènera ce cas et ${responder} répondra.`
+            : `We are ready to begin Case #${phase.caseNum}. The case is "${caseData.title}". I will now read the full case. ${fullCaseText} The question is: ${moderatorQuestion} ${leader} will lead this case, and ${responder} will respond.`;
+        }
         return isFrenchLocale()
         ? `Nous sommes maintenant prêtes à commencer le ${caseLabel(phase.caseNum)}. Le cas s’intitule « ${caseData.title} ». La question est : ${moderatorQuestion} ${leader} mènera ce cas et ${responder} répondra.`
         : `We are ready to begin Case #${phase.caseNum}. The case is "${caseData.title}". The question is: ${moderatorQuestion} ${leader} will lead this case, and ${responder} will respond.`;
@@ -6199,7 +6211,7 @@ function refreshControls() {
 
     [
         participantOneTypeSelectEl, participantOneModelSelectEl, humanNameInputEl, aiNameInputEl, coinCallSelectEl,
-        judgeModeSelectEl, voiceModeSelectEl, modelSelectEl, case1TitleInputEl, case1QuestionInputEl, case1TextInputEl,
+        judgeModeSelectEl, voiceModeSelectEl, moderatorReadFullCaseSelectEl, modelSelectEl, case1TitleInputEl, case1QuestionInputEl, case1TextInputEl,
         case2TitleInputEl, case2QuestionInputEl, case2TextInputEl
     ].forEach((el) => {
         if (!el) return;
@@ -6487,7 +6499,7 @@ messageInputEl.addEventListener("input", () => {
 
 [
     participantOneTypeSelectEl, participantOneModelSelectEl, humanNameInputEl, aiNameInputEl, coinCallSelectEl,
-judgeModeSelectEl, voiceModeSelectEl, modelSelectEl, case1TitleInputEl, case1QuestionInputEl, case1TextInputEl,
+judgeModeSelectEl, voiceModeSelectEl, moderatorReadFullCaseSelectEl, modelSelectEl, case1TitleInputEl, case1QuestionInputEl, case1TextInputEl,
 case2TitleInputEl, case2QuestionInputEl, case2TextInputEl,
 ...judgeInputs.flatMap((judge) => [judge.name, judge.question, judge.humanScore, judge.aiScore, judge.comment])
 ].forEach((el) => {
