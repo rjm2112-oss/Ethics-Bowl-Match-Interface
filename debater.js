@@ -4847,7 +4847,7 @@ function buildAiTurnRevisionPrompt(phase, draftText, revisionNumber, totalRevisi
         wordCountSection,
         `Current draft:\n${clipText(draft, 15000)}`,
         `Revision pass ${revisionNumber} of ${totalRevisions}.`,
-        "Improve or rewrite the draft so it is clearer, more philosophically rigorous, more directly responsive.",
+        "If it can be improved, improve or rewrite the draft so it is clearer, more philosophically rigorous, more directly responsive.",
         "Keep the speaker as a single participant rather than a team.",
         "Do not mention that this text is revised.",
         "Do not mention the word count.",
