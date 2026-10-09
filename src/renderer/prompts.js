@@ -25,7 +25,7 @@
             if (phase.kind === "judgeAnswer") return context.settings.AI_TURN_PROMPTS.buildJudgeAnswerPrompt({
                 participantName: context.services.speakerName(phase.speaker), opponentName: context.services.speakerName(context.services.otherRole(phase.speaker)),
                 locale: context.state.locale, duration: phase.duration, caseData: context.state.cases[phase.caseNum],
-                transcript: context.services.substantiveTranscriptAsPlainText(),
+                transcript: context.services.substantiveTranscriptAsPlainText(phase.caseNum),
                 scoringCriteria: context.settings.ETHICS_BOWL_RUBRIC.buildTurnCriteria({phase,locale:context.state.locale}),
                 additionalInstructions: context.services.getStoredText(context.settings.STORAGE_KEYS.instructions),
                 judgeNumber: phase.judgeNumber, judgeQuestion: context.services.getJudgeQuestionForAnswerPhase(phase)
@@ -34,7 +34,7 @@
                 phase, locale: context.state.locale,
                 caseData: context.state.cases[phase.caseNum],
                 participantRole: phase.speaker === context.state.leadByCase[phase.caseNum] ? "Presenting participant" : "Commenting participant",
-                transcript: context.services.substantiveTranscriptAsPlainText(),
+                transcript: context.services.substantiveTranscriptAsPlainText(phase.caseNum),
                 judgeQuestion: phase.kind === "judgeAnswer" ? context.services.getJudgeQuestionForAnswerPhase(phase) : "",
                 scoringCriteria: context.settings.ETHICS_BOWL_RUBRIC.buildTurnCriteria({ phase, locale: context.state.locale })
             });
@@ -47,7 +47,7 @@
                 participantNames: [context.services.speakerName("human"), context.services.speakerName("ai")],
                 questionedParticipant: context.services.speakerName(context.state.leadByCase[caseNum]),
                 caseData: context.state.cases[caseNum],
-                transcript: context.services.substantiveTranscriptAsPlainText(),
+                transcript: context.services.substantiveTranscriptAsPlainText(caseNum),
                 scoringCriteria: context.settings.ETHICS_BOWL_RUBRIC.buildFullCriteria({locale: context.state.locale}),
                 additionalInstructions: context.services.getStoredText(context.settings.STORAGE_KEYS.instructions)
             });

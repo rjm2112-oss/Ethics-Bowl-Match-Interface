@@ -29,3 +29,46 @@ test("complete speech is chunked without clipping, and an oversized unbroken seg
 test("final scoring includes both complete cases and the complete substantive match transcript",()=>{
  const c=vm.createContext({state:{transcript:[{kind:'ai',caseNum:1,label:'Alex',text:'Full transcript 1',speechDeliveryState:'complete'},{kind:'ai',caseNum:2,label:'Morgan',text:'Full transcript 2',speechDeliveryState:'complete'}],cases:{1:{title:'One',question:'Question one',text:'[CASE-1-END]'},2:{title:'Two',question:'Question two',text:'[CASE-2-END]'}},leadByCase:{1:'human',2:'ai'}},caseLabel:n=>`Case ${n}`,speakerName:r=>r,otherRole:r=>r==='human'?'ai':'human',substantiveTranscriptAsPlainText:n=>`Full transcript ${n}`,l:en=>en});rendererHarness.install(c,['scoringTranscriptAsPlainText']);const text=c.scoringTranscriptAsPlainText();for(const token of ['[CASE-1-END]','[CASE-2-END]','Full transcript 1','Full transcript 2','Question one','Question two'])assert.ok(text.includes(token));
 });
+
+for (const locale of ["en", "fr-ca"]) {
+ test(`${locale}: every turn and judge question sees only its own case, while final scoring sees both`, () => {
+  const leadByCase = {1: "human", 2: "ai"};
+  const phases = require("../src/shared/match-phases").build({leadByCase, locale});
+  const state = {
+   locale, phases, leadByCase, names: {human: "Alex", ai: "Morgan"}, transcript: [],
+   cases: {
+    1: {title: "First case", question: "FIRST_CASE_MODERATOR_QUESTION", text: "FIRST_CASE_CONTENT " + "Full first narrative. ".repeat(1000) + "FIRST_CASE_END"},
+    2: {title: "Second case", question: "SECOND_CASE_MODERATOR_QUESTION", text: "SECOND_CASE_CONTENT " + "Full second narrative. ".repeat(1000) + "SECOND_CASE_END"}
+   }
+  };
+  const c = rendererHarness.load(["buildAiTurnPrompt", "buildAiJudgeQuestionPrompt", "scoringTranscriptAsPlainText"], {
+   state, activeLocale: locale, localStorage: {getItem: () => ""}
+  });
+  for (const phase of phases.filter(item => ["speech", "judgeQuestion", "judgeAnswer"].includes(item.kind))) {
+   const otherCase = state.cases[phase.caseNum === 1 ? 2 : 1];
+   if (phase.kind === "judgeAnswer") state.askedJudgeQuestions[phase.id] = `DELIVERED_${phase.id.replace(/-answer$/, "-question")}_END`;
+   const prompt = phase.kind === "judgeQuestion"
+    ? c.buildAiJudgeQuestionPrompt(phase.caseNum, phase.judgeNumber)
+    : c.buildAiTurnPrompt(phase);
+   assert.ok(prompt.includes(state.cases[phase.caseNum].text), "preserve the complete current case");
+   assert.ok(prompt.includes(state.cases[phase.caseNum].question));
+   assert.ok(!prompt.includes(otherCase.question));
+   assert.ok(!prompt.includes(otherCase.text.split(" ")[0]));
+   for (const message of state.transcript) {
+    assert.equal(prompt.includes(message.text), message.caseNum === phase.caseNum, `context scope for ${phase.id}: ${message.phaseId}`);
+   }
+   if (phase.subtype === "presentation") assert.match(prompt, /No prior discussion yet/);
+   state.transcript.push({
+    kind: phase.kind === "judgeQuestion" ? "judge" : "ai",
+    label: "Speaker", phaseId: phase.id, caseNum: phase.caseNum,
+    text: `DELIVERED_${phase.id}_END`, speechDeliveryState: "complete"
+   });
+  }
+  const scoring = c.scoringTranscriptAsPlainText();
+  for (const data of Object.values(state.cases)) {
+   assert.ok(scoring.includes(data.text));
+   assert.ok(scoring.includes(data.question));
+  }
+  for (const message of state.transcript) assert.ok(scoring.includes(message.text));
+ });
+}

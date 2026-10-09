@@ -71,7 +71,7 @@ test("all four phase types select an in-range complete answer without coaching o
         assert.doesNotMatch(calls[0].systemPrompt,/charitable|philosoph|distinct individual|Do not mention|not a team|Additional model instructions/i);
         assert.ok(calls[0].userPrompt.includes(state.cases[2].text));
         assert.ok(calls[0].userPrompt.includes(state.cases[2].question));
-        assert.ok(calls[0].userPrompt.includes(state.transcript[0].text),"preserve earlier case for match-wide dialogue");
+        assert.doesNotMatch(calls[0].userPrompt,/\[EARLY\]|earlier discussion|\[EARLY END\]/,"exclude the other case's discussion");
         assert.ok(calls[0].userPrompt.includes(state.transcript[1].text));
         assert.doesNotMatch(calls[0].userPrompt,/I yield my time|word count|Length target|first sentence/i);
         assert.equal(calls[0].reasoningEffort,"medium");

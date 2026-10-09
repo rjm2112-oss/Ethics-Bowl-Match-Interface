@@ -66,8 +66,8 @@
             );
             if (!finalQuestion) return null;
 
-            // Start answer generation and exact whole-answer audio measurement only
-            // after the final question has been locked and stored.
+            // The final generated/submitted question is enough to prepare its
+            // answer and audio; the judge's playback need not finish first.
             void context.services.maybePrepareAiTurnForPhase(answerTarget)
             .then((text) => {
                 const cleanText = context.services.sanitizeText(text);
@@ -168,6 +168,11 @@
                 }
                 const finalQuestion = context.services.sanitizeText(question);
                 if (!finalQuestion) throw new Error(context.services.isFrenchLocale() ? `La question du juge IA ${phase.judgeNumber} manquait.` : `AI judge question ${phase.judgeNumber} was missing.`);
+                // Bind and send the complete question before adding its pending
+                // spoken delivery to the transcript. Answer preparation overlaps
+                // the judge's speech, using all preceding delivered discussion.
+                storeJudgeQuestionForPhase(phase, finalQuestion);
+                primeAiJudgeAnswerForFinalQuestion(phase);
                 context.services.setPhaseAwaitingPlayback(phaseId);
                 const questionTranscriptIndex = context.services.appendMessage("judge", context.services.judgeLabel(phase.judgeNumber), finalQuestion, {
                     caseNum: phase.caseNum,
@@ -190,8 +195,6 @@
                                 context.services.setStatus(context.services.l("The interrupted judge question needs verified word alignment.", "La question interrompue du juge nécessite un alignement vérifié des mots."), true);
                                 return;
                             }
-                            storeJudgeQuestionForPhase(phase, delivered.text);
-                            primeAiJudgeAnswerForFinalQuestion(phase);
                             context.services.clearPhaseAwaitingPlayback(phaseId);
                             context.services.advancePhase();
                         }

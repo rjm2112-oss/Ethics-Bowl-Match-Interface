@@ -81,7 +81,7 @@ test("exact-word instruction snapshots preserve all four contestant phase action
     for(const [locale,targets]of Object.entries(values)){
         for(const [i,phase]of all.entries()){
             const prompt=prompts.buildAiTurnPrompt({phase:{...phase,caseNum:1},locale,caseData:{title:"Complete case",question:"Moderator question?",text:"Full case text"},participantRole:"Presenting participant",transcript:"Full prior discussion",judgeQuestion:"Judge question?",scoringCriteria:"Official rubric"});
-            assert.equal(prompt,["Current case: 1 — Complete case","Moderator question: Moderator question?","Case text:\nFull case text",`Current phase: ${phase.subtype||phase.kind}`,"Participant role in this case: Presenting participant",phase.kind==="judgeAnswer"?"Judge question:\nJudge question?":"","Prior discussion in this match:\nFull prior discussion","Official rubric",prompts.getPhaseInstruction(phase),`Write exactly ${targets[i]} words.`].filter(Boolean).join("\n\n"));
+            assert.equal(prompt,["Current case: 1 — Complete case","Moderator question: Moderator question?","Case text:\nFull case text",`Current phase: ${phase.subtype||phase.kind}`,"Participant role in this case: Presenting participant",phase.kind==="judgeAnswer"?"Judge question:\nJudge question?":"","Prior discussion in this case:\nFull prior discussion","Official rubric",prompts.getPhaseInstruction(phase),`Write exactly ${targets[i]} words.`].filter(Boolean).join("\n\n"));
             assert.equal((prompt.match(/Write exactly \d+ words\./g)||[]).length,1);
             assert.doesNotMatch(prompt,/Time available|Word target:|Check the word count|rewrite|revise/i);
         }

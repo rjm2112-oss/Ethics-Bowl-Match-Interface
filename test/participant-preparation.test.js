@@ -120,13 +120,12 @@ test("human timeout prepares from its finalized submitted text before the Time a
     assert.match(f.calls[0].userPrompt, /Finalized human contribution/);
 });
 
-test("judge answers wait for completed question delivery and final binding; questions themselves are never prefetched", async () => {
+test("phase scanning cannot infer an answer from a partial unbound question or prefetch judges' questions", async () => {
     const f = fixture(), question = f.phase("case1-judge1-question"), answer = f.phase("case1-judge1-answer");
     delivered(f, f.phase("case1-response"));
     f.c.primeAiPreparationForPhase(f.phase("case1-response"));
     assert.equal(f.calls.length, 0);
     delivered(f, question, "pending", "Question prefix");
-    f.state.askedJudgeQuestions[answer.id] = "UNPLAYED_FULL_QUESTION";
     f.c.primeAiPreparationForPhase(question);
     assert.equal(f.calls.length, 0);
     f.state.transcript.at(-1).speechDeliveryState = "cutoff";
@@ -137,17 +136,17 @@ test("judge answers wait for completed question delivery and final binding; ques
     assert.equal(f.calls.length, 1);
     assert.equal(f.calls[0].recordContext.phaseId, answer.id);
     assert.match(f.calls[0].userPrompt, /Actually delivered question/);
-    assert.doesNotMatch(f.calls[0].userPrompt, /UNPLAYED_FULL_QUESTION/);
 });
 
-test("case two starts only after the last case one answer is delivered; reset/close discard late text before TTS", async () => {
+test("case two preparation excludes case one's discussion; reset/close discard late text before TTS", async () => {
     const f = fixture(), lastAnswer = f.phase("case1-judge3-answer");
     delivered(f, lastAnswer);
     f.c.primeAiPreparationForPhase(lastAnswer);
     await f.settle();
     assert.equal(f.calls[0].recordContext.phaseId, "case2-presentation");
     assert.match(f.calls[0].userPrompt, /Full second case/);
-    assert.match(f.calls[0].userPrompt, /Actually heard/);
+    assert.doesNotMatch(f.calls[0].userPrompt, /Actually heard/);
+    assert.match(f.calls[0].userPrompt, /No prior discussion yet/);
     for (const cause of ["reset", "close"]) {
         let resolve;
         const cancelled = fixture({generate: () => new Promise(done => {resolve = done;})});

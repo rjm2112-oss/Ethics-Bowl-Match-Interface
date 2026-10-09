@@ -23,9 +23,9 @@ function harness(generate=async()=>JSON.stringify({question:"Why?"}),instruction
 test("judge question matches the approved template with all rubric bands/notes and optional instructions",()=>{
  for(const locale of ["en","fr-ca"])for(const instructions of ["","  \n","Optional question instructions."]){
   const criteria=rubric.buildFullCriteria({locale});
-  const args={judgeNumber:2,locale,participantNames:["Alex","Morgan"],questionedParticipant:"Morgan",caseData:{title:"Case title",text:"Complete case",question:"Moderator question?"},transcript:"Entire prior match including earlier Q&A",scoringCriteria:criteria,additionalInstructions:instructions};
+  const args={judgeNumber:2,locale,participantNames:["Alex","Morgan"],questionedParticipant:"Morgan",caseData:{title:"Case title",text:"Complete case",question:"Moderator question?"},transcript:"Entire current case including earlier Q&A",scoringCriteria:criteria,additionalInstructions:instructions};
   assert.equal(prompts.buildJudgeQuestionPrompt(args),[
-   "You are Judge 2 in an Ethics Bowl match.",`Language: ${locale==="en"?"English":"Québec French"}.`,"Participants: Alex, Morgan.","Participant being questioned: Morgan.","Current case: Case title\nComplete case","Moderator’s question: Moderator question?","Current phase: Judges’ questions.","Time available for your question: 60 seconds.","Prior discussion: Entire prior match including earlier Q&A",`Scoring criteria:\n${criteria}`,instructions.trim()?`Additional instructions:\n${instructions}`:"","Ask one question to Morgan in no more than 75 words.","Avoid repeating an earlier judge’s question.",'Return JSON {"question":"..."}.'
+   "You are Judge 2 in an Ethics Bowl match.",`Language: ${locale==="en"?"English":"Québec French"}.`,"Participants: Alex, Morgan.","Participant being questioned: Morgan.","Current case: Case title\nComplete case","Moderator’s question: Moderator question?","Current phase: Judges’ questions.","Time available for your question: 60 seconds.","Prior discussion in this case: Entire current case including earlier Q&A",`Scoring criteria:\n${criteria}`,instructions.trim()?`Additional instructions:\n${instructions}`:"","Ask one question to Morgan in no more than 75 words.","Avoid repeating an earlier judge’s question.",'Return JSON {"question":"..."}.'
   ].filter(Boolean).join("\n\n"));
   for(const value of Object.values(rubric.CRITERIA)){
    assert.ok(criteria.includes(rubric.formatCriterion(value)));
@@ -43,7 +43,8 @@ test("questions wait for their active phase, see preceding answers and make one 
  assert.equal(await context.maybePrepareAiJudgeQuestion(2,2),"Why?","short questions are not substantively rewritten");
  assert.equal(calls[0].reasoningEffort,"high");assert.equal(calls[0].maxTokens,25600);assert.equal(calls[0].requestTimeoutMs,180000);
  assert.equal(calls.length,1);assert.equal(calls[0].model,"gpt-6-astra");assert.equal(calls[0].systemPrompt,"");
- for(const value of [state.cases[2].text,"Earlier case discussion.","Prior question?","The completed preceding answer.","My optional instructions.","Ask one question to Morgan in no more than 75 words."])assert.ok(calls[0].userPrompt.includes(value));
+ for(const value of [state.cases[2].text,"Prior question?","The completed preceding answer.","My optional instructions.","Ask one question to Morgan in no more than 75 words."])assert.ok(calls[0].userPrompt.includes(value));
+ assert.doesNotMatch(calls[0].userPrompt,/Earlier case discussion/);
  assert.doesNotMatch(calls[0].userPrompt,/pressure-test|hidden assumption|academic philosopher|revision pass|word count|around 500|length target/i);
  assert.equal(await context.maybePrepareAiJudgeQuestion(2,2),"Why?");assert.equal(calls.length,1);
  assert.doesNotMatch(declaration("enterCurrentPhase"),/primeAiJudgeQuestion|primeCurrentAiJudgeQuestion/);
@@ -70,7 +71,7 @@ test("approved contestant answer template preserves exact question, full context
  for(const locale of ["en","fr-ca"])for(const instructions of ["","Saved optional instructions."]){
   const criteria=rubric.buildTurnCriteria({phase:{kind:"judgeAnswer"},locale});
   const actual=prompts.buildJudgeAnswerPrompt({participantName:"Morgan",opponentName:"Alex",locale,caseData:{title:"Case title",text:"Complete full case",question:"Moderator question?"},transcript:"Entire prior Q&A",scoringCriteria:criteria,additionalInstructions:instructions,judgeNumber:2,judgeQuestion:"Do you still agree?"});
-  assert.equal(actual,["You are Morgan, a participant in a live Ethics Bowl match against Alex.",`Language: ${locale==="en"?"English":"Québec French"}.`,"Case: Case title\nComplete full case","Moderator’s question: Moderator question?","Current phase: Answering a judge’s question.","Prior discussion: Entire prior Q&A",`Scoring criteria:\n${criteria}`,instructions?`Additional instructions:\n${instructions}`:"","Judge 2 asks: Do you still agree?","Answer the judge’s question.",locale==="en"?"Write exactly 330 words.":"Write exactly 315 words."].filter(Boolean).join("\n\n"));
+  assert.equal(actual,["You are Morgan, a participant in a live Ethics Bowl match against Alex.",`Language: ${locale==="en"?"English":"Québec French"}.`,"Case: Case title\nComplete full case","Moderator’s question: Moderator question?","Current phase: Answering a judge’s question.","Prior discussion in this case: Entire prior Q&A",`Scoring criteria:\n${criteria}`,instructions?`Additional instructions:\n${instructions}`:"","Judge 2 asks: Do you still agree?","Answer the judge’s question.",locale==="en"?"Write exactly 330 words.":"Write exactly 315 words."].filter(Boolean).join("\n\n"));
   assert.ok(actual.includes(rubric.formatCriterion(rubric.CRITERIA.judgesQuestions)));assert.ok(actual.includes(rubric.formatCriterion(rubric.CRITERIA.respectfulDialogue)));
   assert.doesNotMatch(actual,/first sentence|begin with|word count|revision|charitable tone/);
  }
