@@ -558,7 +558,7 @@ body[data-screen="match"] .match-screen { min-height: 0; }
 
 /* Completed judge results belong to the conversation, without another card. */
 .bubble.judge-result .bubble-label { color: var(--role-judge); }
-.judge-result .bubble-body { min-width: 0; }
+.judge-result .bubble-body { min-width: 0; font: 14px/1.55 var(--font-ui); }
 .judge-result-scores { width: 100%; max-width: 680px; margin: 3px 0 0; border-collapse: collapse; table-layout: fixed; font: 13px/1.45 var(--font-ui); color: var(--text); white-space: normal; }
 .judge-result-scores th, .judge-result-scores td { padding: 4px 8px; vertical-align: top; text-align: right; overflow-wrap: anywhere; }
 .judge-result-scores th { font-weight: 600; }

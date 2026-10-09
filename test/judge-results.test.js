@@ -4,13 +4,31 @@ function element(tag){return {tag,dataset:{},children:[],appendChild(x){return t
 const full={presentationQuestion:5,presentationEthics:5,presentationViewpoints:5,responseToFeedback:10,judgesQuestions:20,commentary:10,respectfulDialogue:5};
 function fixture(){
  const state={started:true,matchRunId:9,judgeMode:'ai',names:{human:'Alex',ai:'Morgan'},cases:{1:{title:'One',text:'Narrative one',question:'Why one?'},2:{title:'Two',text:'Narrative two',question:'Why two?'}},leadByCase:{1:'human',2:'ai'},transcript:[{kind:'ai',label:'Alex',caseNum:1,text:'Delivered discussion.',speechDeliveryState:'complete'}]},requests=[],pending=[],tts=[],renders=[];
- const c=h.load(['maybePrepareAiFinalJudgeScorecard','publishJudgeScorecard','appendMessage','renderScorecards','scoringTranscriptAsPlainText','getMostRecentReadableTranscriptIndex'],{
+ const c=h.load(['maybePrepareAiFinalJudgeScorecard','maybePrepareAllAiFinalScorecards','primeAiFinalScoringPreparationForPhase','publishJudgeScorecard','appendMessage','renderScorecards','scoringTranscriptAsPlainText','getMostRecentReadableTranscriptIndex'],{
   AUTO_SPEAK_MESSAGE_KINDS:new Set(['ai','ai-alt','human','moderator','judge']),state,chatEl:element('div'),emptyStateEl:{},document:{createElement:element},formatBubbleTime:()=>'',getMessageBodyEl:()=>null,l:en=>en,isFrenchLocale:()=>false,speakerName:r=>r==='human'?'Alex':'Morgan',judgeLabel:n=>'Judge '+n,sanitizeText:x=>String(x||'').trim(),getJudgeModel:n=>'mock-'+n,
   renderTranscript:()=>renders.push(state.transcript.length),getVoiceKeyForMessage:()=>'',shouldAutoSpeakMessage:()=>true,enqueueTranscriptSpeech:(...args)=>tts.push(args),
   buildAiScoringSystemPrompt:()=> 'Approved independent prompt',buildAiSingleJudgeScoringPrompt:x=>x,callAI:request=>{requests.push(request);return new Promise((resolve,reject)=>pending.push({resolve,reject}));},scoreCardsEl:{innerHTML:''},scoreSummaryEl:{}
  });return {c,state,requests,pending,tts,renders};
 }
 function raw(comment='Team-level feedback.'){return {participantOne:{...full,didWell:comment,needsImprovement:'One improvement.'},participantTwo:{...full,commentary:9,didWell:'Two strengths.',needsImprovement:'Two improvement.'}};}
+test('final scoring starts all three judges together and reuses pending requests when closing begins',async()=>{
+ const f=fixture(),base=f.c.scoringTranscriptAsPlainText();
+ f.c.primeAiFinalScoringPreparationForPhase({kind:'scoring',caseNum:2});
+ assert.deepEqual(f.requests.map(request=>request.model),['mock-1','mock-2','mock-3']);
+ assert.equal(Object.keys(f.state.aiFinalJudgeScorecards).length,0);
+ assert.equal(f.pending.length,3);
+ const closing=f.c.maybePrepareAllAiFinalScorecards();
+ assert.equal(f.requests.length,3);
+ const third=f.c.maybePrepareAiFinalJudgeScorecard(3);
+ f.pending[2].resolve(raw('Third judge finished first.'));await third;
+ assert.deepEqual(f.state.transcript.filter(m=>m.kind==='judge-result').map(m=>m.scorecard.judgeNumber),[3]);
+ f.pending[0].resolve(raw('First judge.'));f.pending[1].resolve(raw('Second judge.'));
+ const cards=await closing;
+ assert.deepEqual(cards.map(card=>card.judgeNumber),[1,2,3]);
+ assert.equal(f.requests.length,3);
+ assert.ok(f.requests.every(request=>request.userPrompt===base));
+ assert.deepEqual(f.tts,[]);
+});
 test('judge results publish out of order as ready, stay silent, retry only missing judge, and never enter scoring prompts',async()=>{
  const f=fixture(),base=f.c.scoringTranscriptAsPlainText();
  const one=f.c.maybePrepareAiFinalJudgeScorecard(1),two=f.c.maybePrepareAiFinalJudgeScorecard(2),three=f.c.maybePrepareAiFinalJudgeScorecard(3);const failed=assert.rejects(three,/temporary/);
