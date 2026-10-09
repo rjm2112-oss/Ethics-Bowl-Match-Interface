@@ -10,10 +10,12 @@
         if(!message || sources.has(message))throw Error("Speech delivery is already attached or invalid.");
         const parts=chunks.map(normalize),normalized=normalize(originalText);
         if(!parts.length || parts.some(part=>!part) || parts.join(" ")!==normalized)throw Error("Speech chunks do not exactly cover the original text.");
-        sources.set(message,{normalized,wordCount:normalized.split(" ").length,parts,recognized:[],completed:[],next:0,closed:false});
+        sources.set(message,{normalized,preview:String(originalText||""),wordCount:normalized.split(" ").length,parts,recognized:[],completed:[],next:0,closed:false});
         message.text="";message.speechDeliveryState="pending";
     }
     function has(message){return sources.has(message);}
+    // Display-only generated preview. It never enters message.text or model context.
+    function previewText(message){const source=sources.get(message);return source && !source.closed && message.speechDeliveryState==="pending" ? source.preview : null;}
     function matchesSource(message,text){return sources.get(message)?.normalized===normalize(text);}
     function wordCount(message){return sources.get(message)?.wordCount??0;}
     function registerSpokenTranscript(message,index,transcript) {
@@ -28,12 +30,12 @@
         if(!source || source.closed || message.speechDeliveryState!=="pending" || index!==source.next)return false;
         const recognized=source.recognized[index];if(!recognized)throw Error("The played audio needs a speech transcript.");
         source.completed.push(recognized.text);source.next++;message.text=source.completed.join(" ");
-        if(source.next===source.parts.length){message.speechDeliveryState="complete";source.closed=true;source.normalized="";source.parts=[];}
+        if(source.next===source.parts.length){message.speechDeliveryState="complete";source.closed=true;source.normalized="";source.preview="";source.parts=[];}
         return true;
     }
     function beginSpokenCutoff(message) {
         const source=sources.get(message);if(!source || source.closed || message.speechDeliveryState!=="pending")return false;
-        source.closed=true;message.text=source.completed.join(" ");message.speechDeliveryState="transcribing";return true;
+        source.closed=true;source.preview="";message.text=source.completed.join(" ");message.speechDeliveryState="transcribing";return true;
     }
     function finalizeSpokenCutoff(message,actualPartialText) {
         const source=sources.get(message);
@@ -43,7 +45,7 @@
     function sealUnresolved(message) {
         const source=sources.get(message);
         if(!source || !["pending","transcribing"].includes(message.speechDeliveryState))return false;
-        source.closed=true;message.text=source.completed.join(" ");message.speechDeliveryState="unresolved";return true;
+        source.closed=true;source.preview="";message.text=source.completed.join(" ");message.speechDeliveryState="unresolved";return true;
     }
     function playedThrough(audio) {
         let covered=0;
@@ -96,5 +98,5 @@
         return {startChar:progress.offset+word.startChar,endChar:progress.offset+word.endChar};
     }
     function hasFullPlayback(audio) {return !!audio?.ended && Number.isFinite(audio.duration) && audio.duration>0 && playedThrough(audio)>=audio.duration-.001;}
-    return Object.freeze({attach,has,matchesSource,wordCount,registerSpokenTranscript,completeChunk,beginSpokenCutoff,finalizeSpokenCutoff,sealUnresolved,playedThrough,captureProgress,highlightRange,hasFullPlayback});
+    return Object.freeze({attach,has,previewText,matchesSource,wordCount,registerSpokenTranscript,completeChunk,beginSpokenCutoff,finalizeSpokenCutoff,sealUnresolved,playedThrough,captureProgress,highlightRange,hasFullPlayback});
 });

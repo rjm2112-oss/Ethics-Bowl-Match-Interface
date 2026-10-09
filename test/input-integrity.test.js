@@ -20,10 +20,10 @@ test("boundary-length full prompts survive service validation and both provider 
 });
 
 test("complete speech is chunked without clipping, and an oversized unbroken segment fails explicitly",()=>{
- const c=vm.createContext({SPEECH_CHUNK_MAX:800,MAX_TTS_CHARS:2500,l:en=>en});rendererHarness.install(c,['normalizeSpeechText','splitTextByWords','chunkTextForSpeech','buildSpeechQueueEntries']);
+ const c=vm.createContext({SPEECH_CHUNK_MAX:800,MAX_TTS_CHARS:4096,l:en=>en});rendererHarness.install(c,['normalizeSpeechText','splitTextByWords','chunkTextForSpeech','buildSpeechQueueEntries']);
  const text="Beginning. "+"full original speech, ".repeat(1000)+"Final exact words.";
- const chunks=c.buildSpeechQueueEntries('ai',text);assert.equal(chunks.map(chunk=>chunk.text).join(' '),c.normalizeSpeechText(text));assert.ok(chunks.length>20);
- assert.throws(()=>c.buildSpeechQueueEntries('ai','Z'.repeat(2501)),/nothing was clipped/);
+ const chunks=c.buildSpeechQueueEntries('ai',text);assert.equal(chunks.map(chunk=>chunk.text).join(' '),c.normalizeSpeechText(text));assert.ok(chunks.length>1);assert.ok(chunks.every(chunk=>chunk.text.length<=4096));
+ assert.throws(()=>c.buildSpeechQueueEntries('ai','Z'.repeat(4097)),/nothing was clipped/);
 });
 
 test("final scoring includes both complete cases and the complete substantive match transcript",()=>{

@@ -17,7 +17,7 @@ test("every catalog debate model is accepted and routed only to its catalog prov
         const request = validateGenerateRequest({ model: model.id, userPrompt: "Debate this case." });
         assert.equal(request.model, model.id);
         assert.equal(request.provider, model.provider);
-        assert.equal(request.reasoningEffort,"high");assert.equal(request.maxTokens,25800);
+        assert.equal(request.reasoningEffort,"medium");assert.equal(request.maxTokens,25800);
     }
     assert.throws(
         () => validateGenerateRequest({ model: "retired-debate-model", userPrompt: "No.", provider: "openai" }),

@@ -107,7 +107,7 @@
             const selectedPacket=packet || (prior?.packet?.narrative===text.value?prior.packet:prior?.packet && parsed.discussionQuestions.length===0 ? {...prior.packet,narrative:parsed.narrative}:parsed);
             const questions=selectedPacket.discussionQuestions;
             if(!Array.isArray(questions))throw Error("A canonical case packet is required.");
-            const selection=!imported&&questions.includes(prior?.selection)?prior.selection:"";
+            const selection=imported ? questions[0]||"" : questions.includes(prior?.selection)?prior.selection:"";
             const customDraft=imported?"":prior?.customDraft??input.value;
             text.value=selectedPacket.narrative;
             select.replaceChildren(new Option(language(locale())==="fr"?"Question personnalisée":"Custom question","custom"),...questions.map((q,i)=>new Option(`${i+1}. ${q}`,String(i))));

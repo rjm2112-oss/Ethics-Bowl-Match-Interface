@@ -74,7 +74,7 @@ test("all four phase types select an in-range complete answer without coaching o
         assert.ok(calls[0].userPrompt.includes(state.transcript[0].text),"preserve earlier case for match-wide dialogue");
         assert.ok(calls[0].userPrompt.includes(state.transcript[1].text));
         assert.doesNotMatch(calls[0].userPrompt,/I yield my time|word count|Length target|first sentence/i);
-        assert.equal(calls[0].reasoningEffort,"high");
+        assert.equal(calls[0].reasoningEffort,"medium");
         assert.equal(calls[0].maxTokens,25000+context.getAiTurnMaxOutputTokens(phase));
         assert.equal(calls[0].requestTimeoutMs,180000);
     }
@@ -148,7 +148,7 @@ test("technical incomplete-response retry retains identical prompts and returns 
         assert.equal(bodies.length,3);
         assert.equal(bodies[0].max_output_tokens||bodies[0].max_tokens,29000);
         assert.equal(bodies[1].max_output_tokens||bodies[1].max_tokens,32768);
-        for(const body of bodies)assert.equal(body.reasoning?.effort||body.output_config?.effort,"high");
+        for(const body of bodies)assert.equal(body.reasoning?.effort||body.output_config?.effort,"medium");
         if(provider==="openai"){
             assert.equal(bodies[0].input,bodies[1].input);assert.equal(bodies[0].instructions,bodies[1].instructions);
         }else assert.deepEqual(bodies[0].messages,bodies[1].messages);
@@ -166,7 +166,7 @@ test("renderer still uses the existing bounded measured-duration audio timing",(
 });
 
 
-test("all contestant phases apply model-specific medium exceptions and provider mappings",async()=>{
+test("all contestant phases use medium reasoning with both provider mappings",async()=>{
     for(const model of catalog.MATCH_MODELS)for(const phase of phases){
         const bodies=[];
         const service=createProviderService({credentialStore:{get:async()=>"test-key"},sleep:async()=>{},fetchImpl:async(_url,options)=>{
@@ -176,7 +176,7 @@ test("all contestant phases apply model-specific medium exceptions and provider 
         const renderer=createRenderer(request=>service.generate({...request}));
         renderer.state.participantModels={human:model.id,ai:model.id};renderer.state.askedJudgeQuestions.answer="Is this justified?";
         assert.equal(await renderer.context.maybePrepareAiTurnForPhase(phase),"Complete answer");
-        const effort=["gpt-6-astra","claude-fable-5-1"].includes(model.id)?"medium":"high";
+        const effort="medium";
         assert.equal(renderer.calls[0].reasoningEffort,effort);
         assert.equal(bodies[0].reasoning?.effort||bodies[0].output_config?.effort,effort);
         assert.equal(bodies[0].max_tokens||bodies[0].max_output_tokens,25000+renderer.context.getAiTurnMaxOutputTokens(phase));
@@ -208,7 +208,7 @@ test("each dispatched contestant request has one approved exact target in both l
   await context.maybePrepareAiTurnForPhase(phase);assert.equal(calls.length,2);assert.equal(bodies.length,2);
   const body=bodies[0],prompt=body.input||body.messages[0].content,system=body.instructions||body.system||"",target=expected[locale][index];
   assert.deepEqual(prompt.match(/Write exactly \d+ words\./g),[`Write exactly ${target} words.`]);assert.doesNotMatch(system,/Write exactly|words|length|padding|revision/i);assert.doesNotMatch(prompt,/between \d+|around \d+ words|word range|revise|rewrite/i);
-  assert.equal(body.reasoning?.effort||body.output_config?.effort,["gpt-6-astra","claude-fable-5-1"].includes(model)?"medium":"high");
+  assert.equal(body.reasoning?.effort||body.output_config?.effort,"medium");
  }
 });
 

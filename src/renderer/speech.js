@@ -1,6 +1,7 @@
 (function(root,factory){const api=factory();if(typeof module==="object"&&module.exports)module.exports=api;if(root){root.EthicsRenderer=root.EthicsRenderer||{};root.EthicsRenderer["speech"]=api;}})(typeof globalThis==="object"?globalThis:this,function(){"use strict";
     const dependencies=Object.freeze({"services": ["beginSpeechProgressForQueueEntry", "clearTimingTestAudioCache", "countWords", "ensureSpeechAudioEl", "ensureSpeechUi", "finalizeAllSpeechPlaybackCallbacks", "finalizeSpeechPlaybackForMessage", "finishSpeechProgressPlayback", "formatClock", "formatPreciseDuration", "getCurrentPhase", "getJudgeModel", "getParticipantModel", "getPhaseById", "getTimingTestFastForwardForMessage", "hasCredential", "invokeSpeechStartCallbacks", "isAiControlledRole", "isFrenchLocale", "l", "markSpeechChunkComplete", "messageKindForRole", "normalizeSpeechText", "queueSpeechFollowScroll", "refreshSpeechUi", "renderTimingTestResults", "renderTranscript", "resetSpeechProgressState", "restoreMessageBodyPlainText", "syncSpeechProgressToUi", "revokeTimingTestAudioChunks", "safeBridgeErrorMessage", "sanitizeText", "setStatus", "stopTimer", "trackSpeechChunksForMessage", "updateComposerModeIndicator", "waitMs"], "settings": ["AI_TURN_PROMPTS", "AUDIO_MODELS", "AUTO_SPEAK_MESSAGE_KINDS", "AUTO_SPEAK_VOICES", "MAX_TTS_CHARS", "MODEL_CATALOG", "MODERATOR_SPEECH_INSTRUCTIONS", "SPEECH_CHUNK_MAX", "SPEECH_DELIVERY", "SPEECH_TIMING", "STOP_SPEECH_ERROR", "TIMED_SPEECH_TIMER_LEAD_MS", "TIMING_TEST_MODE", "TIMING_TEST_TTS_CONCURRENCY", "WHOLE_SPEECH_MAX_PLAYBACK_RATE", "WHOLE_SPEECH_MIN_PLAYBACK_RATE", "WHOLE_SPEECH_TTS_CONCURRENCY"], "ui": ["timerDisplayEl", "timerHintEl"], "platform": ["AbortController", "Blob", "URL", "console", "window"]});
     function create(context) {
+        const participantSpeechInstructions = "Keep one consistent speaker identity, vocal register, pitch range, accent, and natural measured cadence throughout this speech. Use the selected voice without changing character or delivery style between paragraphs. Preserve the supplied wording exactly.";
         function rejectCurrentSpeechPlayback() {
             if (typeof context.state.currentSpeechReject === "function") {
                 const reject = context.state.currentSpeechReject;
@@ -150,7 +151,7 @@
             const normalized = context.services.normalizeSpeechText(text);
             if (!normalized) return [];
             const segments = normalized
-            .split(/(?<=[,;:.!?…]["')\]]?)\s+|\n{2,}/)
+            .split(/(?<=[.!?…]["')\]]?)\s+|\n{2,}/)
             .map((item) => context.services.normalizeSpeechText(item))
             .filter(Boolean);
             if (segments.length <= 1) return splitTextByWords(normalized, maxLen);
@@ -180,9 +181,10 @@
             if (!normalized) return [];
             const speechStartLeadMs = Math.max(0, Math.min(3000, Number(options.speechStartLeadMs) || 0));
             const minimumHandoffGapMs = Math.max(0, Math.min(3000, Number(options.minimumHandoffGapMs) || 0));
-            const speechTextChunks = chunkTextForSpeech(normalized, context.settings.SPEECH_CHUNK_MAX)
+            const chunkLimit = ["ai", "ai-alt"].includes(kind) ? context.settings.MAX_TTS_CHARS : context.settings.SPEECH_CHUNK_MAX;
+            const speechTextChunks = chunkTextForSpeech(normalized, chunkLimit)
             .map((textChunk) => {
-                if (textChunk.length > context.settings.MAX_TTS_CHARS) throw new Error(context.services.l("Read-aloud contains an unbroken segment longer than 2,500 characters. Add spaces or punctuation to that segment; nothing was clipped.", "La lecture contient un segment sans coupure de plus de 2 500 caractères. Ajoutez des espaces ou de la ponctuation; aucun texte n’a été tronqué."));
+                if (textChunk.length > context.settings.MAX_TTS_CHARS) throw new Error(context.services.l(`Read-aloud contains an unbroken segment longer than ${context.settings.MAX_TTS_CHARS} characters. Add spaces or punctuation to that segment; nothing was clipped.`, `La lecture contient un segment sans coupure de plus de ${context.settings.MAX_TTS_CHARS} caractères. Ajoutez des espaces ou de la ponctuation; aucun texte n’a été tronqué.`));
                 return textChunk;
             })
             .filter(Boolean);
@@ -372,7 +374,7 @@
                                     trackController: false
                                 });
                                 if (!prepared) return { entry, cancelled: true };
-                                const decodedTiming = await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
+                                const decodedTiming = prepared.decodedTiming || await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
                                 return { entry, prepared, decodedTiming };
                             } catch (error) {
                                 return { entry, prepared, error };
@@ -614,7 +616,7 @@
                 context.services.refreshSpeechUi();
             }
             try {
-                if (entry.text.length > context.settings.MAX_TTS_CHARS) throw new Error(context.services.l("Read-aloud text exceeds the 2,500-character chunk limit. Nothing was clipped; split this speech into smaller chunks.", "Le texte dépasse la limite de 2 500 caractères par segment. Aucun texte n’a été tronqué; divisez cette lecture en segments plus petits."));
+                if (entry.text.length > context.settings.MAX_TTS_CHARS) throw new Error(context.services.l(`Read-aloud text exceeds the ${context.settings.MAX_TTS_CHARS}-character chunk limit. Nothing was clipped; split this speech into smaller chunks.`, `Le texte dépasse la limite de ${context.settings.MAX_TTS_CHARS} caractères par segment. Aucun texte n’a été tronqué; divisez cette lecture en segments plus petits.`));
                 const isModerator = entry.kind === "moderator";
                 const result = await getAudioBridge().speech({
                     model: isModerator ? context.settings.AUDIO_MODELS.moderatorSpeech : context.settings.AUDIO_MODELS.speech,
@@ -622,7 +624,8 @@
                     input: entry.text,
                     responseFormat: "mp3",
                     recordContext:speechRecordContext(entry),
-                    ...(isModerator ? { instructions: context.settings.MODERATOR_SPEECH_INSTRUCTIONS } : {})
+                    ...(isModerator ? { instructions: context.settings.MODERATOR_SPEECH_INSTRUCTIONS }
+                        : ["ai", "ai-alt"].includes(entry.kind) ? { instructions: participantSpeechInstructions } : {})
                 });
                 if (!isCurrent()) return null;
                 if (controller.signal.aborted) throw createLocalAbortError();
@@ -634,13 +637,19 @@
                     const timing = await decodeSpeechAudioDuration(audioBytes,prepared.audioUrl);
                     if (!isCurrent()) { revokePreparedSpeechAudio(prepared); return null; }
                     prepared.naturalDurationSeconds = timing.durationSeconds;
+                    prepared.decodedTiming = timing;
                     await saveSpeechRecord("generated_audio",prepared,{naturalDurationSeconds:timing.durationSeconds,chunkWords:context.services.countWords(entry.text),chunkText:entry.text,cacheReused:!!result?.cacheReused});
                     context.platform.console.info(`[speech-chunk-audit] ${JSON.stringify({phaseId:entry.phaseId,kind:entry.kind,transcriptIndex:entry.transcriptIndex,chunkIndex:entry.chunkIndex,wordCount:context.services.countWords(entry.text),characters:entry.text.length,naturalDurationSeconds:timing.durationSeconds})}`);
                     if (!isCurrent()) { revokePreparedSpeechAudio(prepared); return null; }
                     if (["ai","ai-alt","judge"].includes(entry.kind) && !context.settings.TIMING_TEST_MODE) {
                         const bridge = getAudioBridge();
                         if (typeof bridge.alignSpeech !== "function") throw new Error("The speech word-alignment bridge is unavailable.");
-                        prepared.wordAlignment = await bridge.alignSpeech({bytes:audioBytes,mimeType:blob.type,fileName:"speech.mp3",originalText:entry.text,durationSeconds:timing.durationSeconds,language:context.services.isFrenchLocale()?"fr":"en",recordId:prepared.recordId});
+                        // Recognition starts during preparation and can finish
+                        // while audio plays. It is still required before delivery
+                        // completes or becomes available to the next model turn.
+                        prepared.wordAlignmentPromise = Promise.resolve(bridge.alignSpeech({bytes:audioBytes,mimeType:blob.type,fileName:"speech.mp3",originalText:entry.text,durationSeconds:timing.durationSeconds,language:context.services.isFrenchLocale()?"fr":"en",recordId:prepared.recordId}))
+                            .then(alignment => { if (!isCurrent()) return null; prepared.wordAlignment = alignment; return alignment; });
+                        prepared.wordAlignmentPromise.catch(() => {});
                     }
                     if (!isCurrent()) {revokePreparedSpeechAudio(prepared);return null;}
                     return prepared;
@@ -712,7 +721,15 @@
             }
             const message = context.state.transcript[prepared.entry?.transcriptIndex];
             if (context.settings.SPEECH_DELIVERY.has(message)) {
-                context.settings.SPEECH_DELIVERY.registerSpokenTranscript(message,prepared.entry.chunkIndex,prepared.wordAlignment);
+                if (prepared.wordAlignment) context.settings.SPEECH_DELIVERY.registerSpokenTranscript(message,prepared.entry.chunkIndex,prepared.wordAlignment);
+                else if (prepared.wordAlignmentPromise) {
+                    prepared.wordAlignmentPromise.then(alignment => {
+                        if (token === context.state.speechToken && runId === context.state.matchRunId
+                            && !context.state.sessionClosed && message.speechDeliveryState === "pending") {
+                            context.settings.SPEECH_DELIVERY.registerSpokenTranscript(message,prepared.entry.chunkIndex,alignment);
+                        }
+                    }).catch(() => {});
+                } else throw new Error("The prepared audio needs a speech transcript.");
                 context.state.currentDeliveryPlayback = {message,entry:prepared.entry,audio:audioEl,token,runId:context.state.matchRunId};
             }
             context.state.currentAudioUrl = prepared.audioUrl;
@@ -748,16 +765,26 @@
                         if (context.state.currentSpeechReject === rejectRef) context.state.currentSpeechReject = null;
                         reject(error);
                     };
-                    const resolveRef = () => {
-                        if (settled || token !== context.state.speechToken) return;
-                        const message = context.state.transcript[prepared.entry?.transcriptIndex];
-                        if (context.settings.SPEECH_DELIVERY.hasFullPlayback(audioEl)
-                            && context.settings.SPEECH_DELIVERY.completeChunk(message, prepared.entry?.chunkIndex)) context.services.renderTranscript();
-                        notifyPlaybackStarted();
-                        saveSpeechRecordNotice("playback_ended",prepared,{mediaTime:audioEl.currentTime,wallMilliseconds:Date.now()-prepared.playbackWallStart,playedThrough:context.settings.SPEECH_DELIVERY.playedThrough(audioEl),playbackRate:audioEl.playbackRate,deliveredPrefix:message?.text||"",deliveryState:message?.speechDeliveryState||"complete",timerRemaining:context.state.timer.remaining});
-                        settled = true;
-                        if (context.state.currentSpeechReject === rejectRef) context.state.currentSpeechReject = null;
-                        resolve();
+                    let ending = false;
+                    const resolveRef = async () => {
+                        if (settled || ending || token !== context.state.speechToken) return;
+                        ending = true;
+                        try {
+                            if (context.settings.SPEECH_DELIVERY.has(message) && prepared.wordAlignmentPromise) {
+                                const alignment = await prepared.wordAlignmentPromise;
+                                if (settled || token !== context.state.speechToken || runId !== context.state.matchRunId || context.state.sessionClosed) return;
+                                context.settings.SPEECH_DELIVERY.registerSpokenTranscript(message,prepared.entry.chunkIndex,alignment);
+                            }
+                        } catch (error) { rejectRef(error); return; }
+                        try {
+                            if (context.settings.SPEECH_DELIVERY.hasFullPlayback(audioEl)
+                                && context.settings.SPEECH_DELIVERY.completeChunk(message, prepared.entry?.chunkIndex)) context.services.renderTranscript();
+                            notifyPlaybackStarted();
+                            saveSpeechRecordNotice("playback_ended",prepared,{mediaTime:audioEl.currentTime,wallMilliseconds:Date.now()-prepared.playbackWallStart,playedThrough:context.settings.SPEECH_DELIVERY.playedThrough(audioEl),playbackRate:audioEl.playbackRate,deliveredPrefix:message?.text||"",deliveryState:message?.speechDeliveryState||"complete",timerRemaining:context.state.timer.remaining});
+                            settled = true;
+                            if (context.state.currentSpeechReject === rejectRef) context.state.currentSpeechReject = null;
+                            resolve();
+                        } catch (error) { rejectRef(error); }
                     };
                     context.state.currentSpeechReject = rejectRef;
                     audioEl.ontimeupdate = captureActiveSpeechDelivery;
@@ -900,7 +927,7 @@
                             trackController: false
                         });
                         if (!prepared) return { entry, cancelled: true };
-                        const decodedTiming = await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
+                        const decodedTiming = prepared.decodedTiming || await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
                         return { entry, prepared, decodedTiming };
                     } catch (error) {
                         return { entry, prepared, error };
@@ -1066,6 +1093,8 @@
                         mimeType: prepared.mimeType,
                         recordId: prepared.recordId,
                         wordAlignment: prepared.wordAlignment,
+                        wordAlignmentPromise: prepared.wordAlignmentPromise,
+                        decodedTiming: prepared.decodedTiming,
                         naturalDurationSeconds: prepared.naturalDurationSeconds
                     };
                 });

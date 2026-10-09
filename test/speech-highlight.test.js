@@ -46,14 +46,14 @@ test('missing, malformed, mismatched, or non-monotone maps never invent early te
  for(const alignment of maps){const m={};delivery.attach(m,'Private.',['Private.']);delivery.registerSpokenTranscript(m,0,{transcriptText:'Actual.',alignment});assert.equal(delivery.captureProgress(m,0,audio(2)),false);assert.equal(delivery.highlightRange(m,0,audio(2)),null);assert.equal(m.text,'');}
  const m=fixture();m.text='Private generated source.';assert.equal(delivery.highlightRange(m,0,audio(1)),null);
 });
-test('renderer creates highlight spans for tracked speech and clears them after completion or cutoff',()=>{
- const m=fixture(),a=audio(1),r=renderer(m,a);r.c.captureActiveSpeechDelivery();assert.equal(r.body().textContent,'Actual words');assert.equal(r.body().querySelector('.speech-speaking').textContent,'words');
+test('renderer shows a stable generated preview while the separate ledger follows actual speech',()=>{
+ const m=fixture(),a=audio(1),r=renderer(m,a);r.c.captureActiveSpeechDelivery();assert.equal(r.body().textContent,'Private generated source.');assert.equal(m.text,'Actual words');assert.equal(r.body().querySelector('.speech-speaking'),null);
  delivery.beginSpokenCutoff(m);r.c.captureActiveSpeechDelivery();r.render();assert.equal(r.body().querySelector('.speech-speaking'),null);assert.doesNotMatch(r.body().textContent,/only|Private/);
  delivery.finalizeSpokenCutoff(m,'Actually cut off.');r.render();assert.equal(r.body().textContent,'Actually cut off.');assert.equal(r.body().querySelector('.speech-speaking'),null);
  const full=fixture(),f=renderer(full,audio(1.5));f.c.captureActiveSpeechDelivery();delivery.completeChunk(full,0);f.render();assert.equal(f.body().querySelector('.speech-speaking'),null);assert.equal(f.body().textContent,'Actual words only.');
 });
 test('reset and close remove highlights without new recognition; stale callbacks cannot restore them',async()=>{
- for(const reason of ['reset','closed']){const m=fixture(),r=renderer(m,audio(1));r.c.captureActiveSpeechDelivery();assert.ok(r.body().querySelector('.speech-speaking'));await r.c.stopSpeechPlayback(false,{resolveCallbacks:false,deliveryReason:reason});r.render();assert.equal(r.body().querySelector('.speech-speaking'),null);assert.equal(m.speechDeliveryState,'unresolved');assert.equal(r.c.state.speechProgressMessageIndex,-1);r.c.captureActiveSpeechDelivery();assert.equal(r.body().querySelector('.speech-speaking'),null);}
+ for(const reason of ['reset','closed']){const m=fixture(),r=renderer(m,audio(1));r.c.captureActiveSpeechDelivery();assert.equal(r.body().textContent,'Private generated source.');await r.c.stopSpeechPlayback(false,{resolveCallbacks:false,deliveryReason:reason});r.render();assert.equal(r.body().querySelector('.speech-speaking'),null);assert.doesNotMatch(r.body().textContent,/Private/);assert.equal(m.speechDeliveryState,'unresolved');assert.equal(r.c.state.speechProgressMessageIndex,-1);r.c.captureActiveSpeechDelivery();assert.equal(r.body().querySelector('.speech-speaking'),null);}
  const m=fixture(),r=renderer(m,audio(1));r.c.state.matchRunId++;r.c.captureActiveSpeechDelivery();assert.equal(m.text,'');r.render();assert.equal(r.body().querySelector('.speech-speaking'),null);
 });
 test('anonymized recorded timing fixture releases and highlights only its confirmed public prefix',()=>{
@@ -61,10 +61,10 @@ test('anonymized recorded timing fixture releases and highlights only its confir
  for(const boundary of [.1,.8,2,4,8,15,22,saved.audioDurationSeconds]){const a=audio(boundary);delivery.captureProgress(m,0,a);const range=delivery.highlightRange(m,0,a);if(range){assert.ok(range.startChar>=0 && range.endChar<=m.text.length);assert.equal(m.text.slice(range.startChar,range.endChar),saved.transcriptText.slice(range.startChar,range.endChar));assert.ok(saved.alignment.words.find(w=>w.startChar===range.startChar).endSeconds<=boundary);}assert.ok(saved.transcriptText.startsWith(m.text));}
 });
 
-test('switching speakers clears the previous row and highlights only the active recognized speaker',()=>{
- const first=fixture('First speaker words.'),r=renderer(first,audio(1));r.c.captureActiveSpeechDelivery();assert.ok(r.body().querySelector('.speech-speaking'));
+test('switching speakers keeps generated previews separate from each speaker’s recognized text',()=>{
+ const first=fixture('First speaker words.'),r=renderer(first,audio(1));r.c.captureActiveSpeechDelivery();assert.equal(first.text,'First speaker');assert.equal(r.body().textContent,'Private generated source.');
  const second=fixture('Second speaker words.');r.c.state.transcript.push(second);r.c.state.currentDeliveryPlayback={message:second,entry:{transcriptIndex:1,chunkIndex:0},audio:audio(1),token:r.c.state.speechToken,runId:r.c.state.matchRunId};r.c.captureActiveSpeechDelivery();
- assert.equal(r.body().querySelector('.speech-speaking'),null);const row=r.c.createMessageElement(second,1);assert.equal(row.querySelector('.speech-speaking').textContent,'speaker');assert.equal(row.querySelector('.bubble-body').textContent,'Second speaker');
+ assert.equal(r.body().querySelector('.speech-speaking'),null);const row=r.c.createMessageElement(second,1);assert.equal(row.querySelector('.speech-speaking'),null);assert.equal(row.querySelector('.bubble-body').textContent,'Private generated source.');assert.equal(second.text,'Second speaker');
 });
 
 test('media crossing a word boundary before paint retains only the last displayed confirmed word',()=>{

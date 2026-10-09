@@ -35,20 +35,14 @@
         judgePanel("anthropic-majority",["claude-fable-5-1","claude-fable-5-1","gpt-6-astra"],"2 × Claude Fable 5.1 + 1 × GPT-6 Astra","2 × Claude Fable 5.1 + 1 × GPT-6 Astra")
     ]);
     const REASONING_POLICIES = Object.freeze({
-        participant: "high",
+        participant: "medium",
         judge: "high"
-    });
-    const PARTICIPANT_REASONING_EXCEPTIONS = Object.freeze({
-        "gpt-6-astra": "medium",
-        "claude-fable-5-1": "medium"
     });
 
     function getReasoningEffort(modelId, role) {
         if (!getModel(modelId)) throw new Error("The selected debate model is not supported.");
         if (role !== "participant" && role !== "judge") throw new Error("Reasoning role must be participant or judge.");
-        return role === "participant"
-            ? PARTICIPANT_REASONING_EXCEPTIONS[modelId] || REASONING_POLICIES.participant
-            : REASONING_POLICIES.judge;
+        return REASONING_POLICIES[role];
     }
 
     // Total output includes hidden reasoning. These app bounds are not provider ceilings.
@@ -110,7 +104,6 @@
         DEFAULT_JUDGE_PANEL,
         JUDGE_PANELS,
         REASONING_POLICIES,
-        PARTICIPANT_REASONING_EXCEPTIONS,
         getReasoningEffort,
         MAX_TEXT_OUTPUT_TOKENS,
         HIGH_REASONING_ALLOWANCE_TOKENS,

@@ -2,11 +2,11 @@
     function extractQuestions(text) {
         const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
         const key = line => line.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
-        const start = lines.findIndex(line => !/[?？]/.test(line) && /^(?:discussions?questions|matiereadiscussion|questionsdediscussion|questionspourladiscussion)$/.test(key(line)));
+        const start = lines.findIndex(line => !/[?？]/.test(line) && /^(?:discussions?questions|matiereadiscussion|matiereadiscuter|questionsdediscussion|questionspourladiscussion)$/.test(key(line)));
         if (start < 0) return [];
         const section = [];
         for (const line of lines.slice(start + 1)) {
-            if (/^(?:furtherexplorations?|furtherreading|lectures?dapprofondissement|ressourcessupplementaires|pourallerplusloin|references|bibliographie|sources)$/.test(key(line))) break;
+            if (/^(?:furtherexplorations?|furtherreading|lectures?dapprofondissement|lectures?complementaires?|ressourcessupplementaires|pourallerplusloin|references|bibliographie|sources)$/.test(key(line))) break;
             if (/^(?:page\s*\d+|\d+|\d{4}\s*[-–]\s*\d{2,4}.*(?:case set|ethics bowl)|ensemble des cas.*\d{4}|canadian.*ethics bowl.*)$/i.test(line.trim())) continue;
             section.push(line.trim());
         }
@@ -32,7 +32,7 @@
         const rawPacket=String(text||"").replace(/\r\n?/g,"\n");
         const lines=rawPacket.split("\n");
         const key=line=>line.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
-        const start=lines.findIndex(line=>!/[?？]/.test(line) && /^(?:discussions?questions|matiereadiscussion|questionsdediscussion|questionspourladiscussion)$/.test(key(line)));
+        const start=lines.findIndex(line=>!/[?？]/.test(line) && /^(?:discussions?questions|matiereadiscussion|matiereadiscuter|questionsdediscussion|questionspourladiscussion)$/.test(key(line)));
         return Object.freeze({rawPacket,narrative:(start<0?rawPacket:lines.slice(0,start).join("\n")).trim(),discussionQuestions:Object.freeze(extractQuestions(rawPacket))});
     }
     return Object.freeze({parse});

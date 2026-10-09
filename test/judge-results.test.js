@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),h=require('./helpers/renderer-harness');
-function element(tag){return {tag,dataset:{},children:[],appendChild(x){this.children.push(x);},set innerHTML(x){this.children=[];},get innerHTML(){return '';}};}
+function element(tag){return {tag,dataset:{},children:[],appendChild(x){return this.insertBefore(x,null);},insertBefore(x,before){x.parent?.removeChild(x);const index=before?this.children.indexOf(before):this.children.length;this.children.splice(index,0,x);x.parent=this;return x;},removeChild(x){this.children.splice(this.children.indexOf(x),1);x.parent=null;},querySelector(selector){return this.children.find(child=>child.className===selector.slice(1))||this.children.map(child=>child.querySelector?.(selector)).find(Boolean)||null;},set innerHTML(x){this.children=[];},get innerHTML(){return '';}};}
 const full={presentationQuestion:5,presentationEthics:5,presentationViewpoints:5,responseToFeedback:10,judgesQuestions:20,commentary:10,respectfulDialogue:5};
 function fixture(){
  const state={started:true,matchRunId:9,judgeMode:'ai',names:{human:'Alex',ai:'Morgan'},cases:{1:{title:'One',text:'Narrative one',question:'Why one?'},2:{title:'Two',text:'Narrative two',question:'Why two?'}},leadByCase:{1:'human',2:'ai'},transcript:[{kind:'ai',label:'Alex',caseNum:1,text:'Delivered discussion.',speechDeliveryState:'complete'}]},requests=[],pending=[],tts=[],renders=[];

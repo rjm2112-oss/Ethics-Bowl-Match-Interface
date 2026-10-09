@@ -1,9 +1,10 @@
 (function(root,factory){const api=factory();if(typeof module==="object"&&module.exports)module.exports=api;if(root){root.EthicsRenderer=root.EthicsRenderer||{};root.EthicsRenderer["turns"]=api;}})(typeof globalThis==="object"?globalThis:this,function(){"use strict";
-    const dependencies=Object.freeze({"services": ["advancePhase", "appendParticipantMessage", "blockAutoGenerationForPhase", "buildAiDebaterSystemPrompt", "buildAiTurnPrompt", "callAI", "clearPhaseAwaitingPlayback", "countWords", "getCurrentPhase", "getJudgeQuestionForAnswerPhase", "getParticipantModel", "isAiControlledRole", "isCurrentPhaseAwaitingPlayback", "isFrenchLocale", "judgeLabel", "l", "maybeCompletePreparedAiConferral", "phasePreloadsAutoSpeechDuringModerator", "phaseSubtypeLabel", "phaseUsesNaturalModeratorHandoff", "prepareWholeSpeechAudioForPhase", "primeWholeSpeechAudioForPhase", "sanitizeText", "setBusy", "setPhaseAwaitingPlayback", "setStatus", "speakerName", "startTimerWithAutoSpeech"], "settings": ["AI_TURN_PROMPTS", "MODEL_CATALOG", "PARTICIPANT_SPEECH_HANDOFF_GAP_MS", "TIMED_SPEECH_TIMER_LEAD_MS", "TIMING_TEST_MODE"], "ui": [], "platform": ["console"]});
+    const dependencies=Object.freeze({"services": ["advancePhase", "appendParticipantMessage", "blockAutoGenerationForPhase", "buildAiDebaterSystemPrompt", "buildAiTurnPrompt", "callAI", "clearPhaseAwaitingPlayback", "countWords", "getCurrentPhase", "getJudgeQuestionForAnswerPhase", "getParticipantModel", "isAiControlledRole", "isCurrentPhaseAwaitingPlayback", "isFrenchLocale", "isSubstantiveTranscriptMessage", "judgeLabel", "l", "maybeCompletePreparedAiConferral", "phasePreloadsAutoSpeechDuringModerator", "phaseSubtypeLabel", "phaseUsesNaturalModeratorHandoff", "prepareWholeSpeechAudioForPhase", "primeWholeSpeechAudioForPhase", "sanitizeText", "setBusy", "setPhaseAwaitingPlayback", "setStatus", "speakerName", "startTimerWithAutoSpeech"], "settings": ["AI_TURN_PROMPTS", "MODEL_CATALOG", "PARTICIPANT_SPEECH_HANDOFF_GAP_MS", "TIMED_SPEECH_TIMER_LEAD_MS", "TIMING_TEST_MODE"], "ui": [], "platform": ["console"]});
     function create(context) {
         function getLinkedAiPreparationTarget(phase) {
             if (!phase) return null;
-            const nextPhase = context.state.phases[context.state.currentPhaseIndex + 1] || null;
+            const index = context.state.phases.findIndex(item => item.id === phase.id);
+            const nextPhase = index < 0 ? null : context.state.phases[index + 1] || null;
             if (!nextPhase) return null;
             if (
                 phase.kind === "confer" &&
@@ -42,6 +43,9 @@
             const cached=record && record.question===boundQuestion ? record.text : "";
             if (cached) return cached;
             if (context.state.aiPreparationPromises[phaseId]) return context.state.aiPreparationPromises[phaseId];
+            // Background phase-entry/activation primes share the failed operation
+            // too. Only the visible Retry action may start another operation.
+            if (context.state.aiPreparationErrors[phaseId]) throw new Error(context.state.aiPreparationErrors[phaseId]);
             const runId = context.state.matchRunId;
             const isCurrent = () => runId === context.state.matchRunId && !context.state.sessionClosed && !context.state.completed && !context.state.interruptedPhaseIds?.has(phaseId);
             let trackedPromise = null;
@@ -108,9 +112,37 @@
         }
 
 
+        function getAiPreparationTarget(phase) {
+            if (!phase) return null;
+            const index = context.state.phases.findIndex(item => item.id === phase.id);
+            if (index < 0) return null;
+            if (phase.kind === "confer") return getLinkedAiPreparationTarget(phase);
+            if (["speech", "judgeAnswer", "judgeQuestion"].includes(phase.kind)) {
+                const delivered = context.state.transcript.filter(message => message.phaseId === phase.id && context.services.isSubstantiveTranscriptMessage(message));
+                if (!delivered.length && !context.state.interruptedPhaseIds?.has(phase.id)) {
+                    return phase.kind === "judgeQuestion" ? null : phase;
+                }
+                if (delivered.some(message => !["complete", "cutoff"].includes(message.speechDeliveryState))) return null;
+                // A question without a finalized delivered text cannot bind an answer.
+                if (phase.kind === "judgeQuestion" && !delivered.length) return null;
+            } else if (!["moderatorCase", "scoring"].includes(phase.kind)) return null;
+            // Only cross administrative phases. The next substantive turn still
+            // depends on every preceding delivered contribution, including judges.
+            for (const next of context.state.phases.slice(index + 1)) {
+                if (next.kind === "judgeQuestion" || next.kind === "closing") return null;
+                if (next.kind === "speech" || next.kind === "judgeAnswer") return next;
+            }
+            return null;
+        }
+
+
         function primeAiPreparationForPhase(phase) {
-            const targetPhase = getLinkedAiPreparationTarget(phase);
+            if (context.state.sessionClosed || context.state.completed || context.state.voiceFinalizePending || context.state.isRecording) return;
+            if (context.state.transcript.some(message => context.services.isSubstantiveTranscriptMessage(message) && !["complete", "cutoff"].includes(message.speechDeliveryState))) return;
+            const targetPhase = getAiPreparationTarget(phase);
             if (!targetPhase) return;
+            if (targetPhase.kind === "judgeAnswer" && !context.services.getJudgeQuestionForAnswerPhase(targetPhase)) return;
+            if (context.state.aiPreparationErrors[targetPhase.id]) return;
             void maybePrepareAiTurnForPhase(targetPhase).catch((error) => {
                 context.platform.console.error("AI preparation failed:", error);
             });
@@ -130,6 +162,7 @@
             }
             const hasPrepared = !!getPreparedAiTurnText(targetPhase.id);
             const hasPendingPreparation = !!context.state.aiPreparationPromises[targetPhase.id];
+            if (context.state.autoGenerationBlockedPhaseId === phaseId) delete context.state.aiPreparationErrors[targetPhase.id];
             context.services.setBusy(true);
             context.services.setStatus(
                 hasPrepared
@@ -201,6 +234,7 @@
             const speaker = context.services.speakerName(phase.speaker);
             const hasPrepared = !!getPreparedAiTurnText(phaseId);
             const hasPendingPreparation = !!context.state.aiPreparationPromises[phaseId];
+            if (!duringModerator && context.state.autoGenerationBlockedPhaseId === phaseId) delete context.state.aiPreparationErrors[phaseId];
             if (duringModerator) context.services.setPhaseAwaitingPlayback(phaseId);
             if (!duringModerator) {
                 context.services.setBusy(true);
@@ -263,7 +297,7 @@
             if (context.services.isCurrentPhaseAwaitingPlayback(phase)) return;
             void generateAiTurnForPhase(phase, { duringModerator: true });
         }
-        return Object.freeze({getLinkedAiPreparationTarget,getPreparedAiTurnText,getAiTurnMaxOutputTokens,maybePrepareAiTurnForPhase,primeAiPreparationForPhase,handleAiConferPhase,generateAiTurnForPhase,primeAiSpeechPlaybackDuringModerator});
+        return Object.freeze({getLinkedAiPreparationTarget,getPreparedAiTurnText,getAiTurnMaxOutputTokens,maybePrepareAiTurnForPhase,getAiPreparationTarget,primeAiPreparationForPhase,handleAiConferPhase,generateAiTurnForPhase,primeAiSpeechPlaybackDuringModerator});
     }
     return Object.freeze({create,dependencies});
 });

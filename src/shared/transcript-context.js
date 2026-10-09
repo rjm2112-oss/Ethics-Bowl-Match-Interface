@@ -11,7 +11,9 @@
     }
     function isSubstantive(message) {return !!message && message.substantive!==false && ["human","ai","ai-alt","judge"].includes(message.kind);}
     function discussion({messages,phases,locale="en",caseNum=null}) {
-        assertReady(messages,locale);
+        // Moderator announcements and conferral notices never enter model context.
+        // Their playback can overlap preparation once substantive delivery is final.
+        assertReady(messages.filter(isSubstantive),locale);
         const french=locale==="fr-ca", caseLabel=n=>french?`Cas ${n}`:`Case #${n}`;
         const phaseMap=new Map(phases.map(phase=>[phase.id,phase]));
         return messages.filter(message=>(caseNum===null || message.caseNum===caseNum)&&isSubstantive(message)).map(message=>{
@@ -27,7 +29,7 @@
         }).join("\n\n");
     }
     function scoring({messages,phases,cases,leadByCase,names,locale="en"}) {
-        assertReady(messages,locale);
+        assertReady(messages.filter(isSubstantive),locale);
         const french=locale==="fr-ca";
         return [1,2].map(caseNum=>{
             const data=cases[caseNum],leader=leadByCase[caseNum],responder=leader==="human"?"ai":"human";

@@ -263,6 +263,7 @@
                 const question = [...context.state.transcript].reverse().find(message => message.phaseId === expiredPhase.id && message.kind === "judge");
                 if (question?.speechDeliveryState === "cutoff" && question.text) context.services.storeJudgeQuestionForPhase(expiredPhase,question.text);
             }
+            context.services.primeAiPreparationForPhase(expiredPhase);
             context.services.appendMessage("moderator", context.services.moderatorLabel(), context.services.l("Time.", "Temps."), {
                 caseNum: expiredPhase.caseNum || 0,
                     phaseId: expiredPhase.id || "",
@@ -356,7 +357,7 @@
                 refreshControls();
 
                 context.services.appendMessage("moderator", context.services.moderatorLabel(), context.services.l(
-                    `Welcome to this Ethics Bowl-style match between ${context.state.names.human} and ${context.state.names.ai}. This site uses the official two-case structure, adapted for two single participants.`,
+                    `Welcome to this Ethics Bowl match between ${context.state.names.human} and ${context.state.names.ai}. This site uses the official two-case structure, adapted for two single participants.`,
                     `Bienvenue à ce match de la Coupe éthique Canada entre ${context.state.names.human} et ${context.state.names.ai}. Ce site utilise la structure officielle à deux cas, adaptée à deux participantes individuelles.`
                 ));
 
@@ -541,6 +542,7 @@
             renderPhaseList();
             context.services.prepareTimerForPhaseAnnouncement(phase);
             refreshControls();
+            context.services.primeAiPreparationForPhase(phase);
             context.services.primeAiFinalScoringPreparationForPhase(phase);
             context.services.appendMessage("moderator", context.services.moderatorLabel(), phaseAnnouncementText(phase), {
                 caseNum: phase.caseNum || 0,

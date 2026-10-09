@@ -1,5 +1,5 @@
 (function(root,factory){const api=factory();if(typeof module==="object"&&module.exports)module.exports=api;if(root){root.EthicsRenderer=root.EthicsRenderer||{};root.EthicsRenderer["composer"]=api;}})(typeof globalThis==="object"?globalThis:this,function(){"use strict";
-    const dependencies=Object.freeze({"services": ["advanceAfterTimedPhaseExpiration", "advancePhase", "appendMessage", "appendParticipantMessage", "currentPhaseUsesMainComposer", "getActiveHumanJudgeEntry", "getActiveHumanJudgeName", "getAiJudgeQuestionPreparationKey", "getCachedAiJudgeQuestion", "getCurrentPhase", "getPendingVoiceSubmissionReason", "isAiControlledRole", "isCurrentPhaseAwaitingPlayback", "isFrenchLocale", "isHumanJudgeQuestionPhase", "isSpeechPlaybackActive", "judgeLabel", "l", "moderatorLabel", "primeAiJudgeAnswerForFinalQuestion", "resolvePendingVoiceSubmission", "sanitizeText", "saveSetup", "setPendingVoiceSubmission", "setStatus", "speakerName", "stopRecordingAndFinalize", "storeJudgeQuestionForPhase", "usesAiFinalScoring"], "settings": ["COMPOSER_STATUS"], "ui": ["composerFormEl", "composerModeIndicatorEl", "judgeInputs", "liveVoicePreviewEl", "liveVoiceWrapEl", "messageInputEl", "nextActionBtnEl", "statusLineEl"], "platform": ["document"]});
+    const dependencies=Object.freeze({"services": ["advanceAfterTimedPhaseExpiration", "advancePhase", "appendMessage", "appendParticipantMessage", "currentPhaseUsesMainComposer", "getActiveHumanJudgeEntry", "getActiveHumanJudgeName", "getAiJudgeQuestionPreparationKey", "getCachedAiJudgeQuestion", "getCurrentPhase", "getPendingVoiceSubmissionReason", "isAiControlledRole", "isCurrentPhaseAwaitingPlayback", "isFrenchLocale", "isHumanJudgeQuestionPhase", "isSpeechPlaybackActive", "judgeLabel", "l", "moderatorLabel", "primeAiJudgeAnswerForFinalQuestion", "primeAiPreparationForPhase", "resolvePendingVoiceSubmission", "sanitizeText", "saveSetup", "setPendingVoiceSubmission", "setStatus", "speakerName", "stopRecordingAndFinalize", "storeJudgeQuestionForPhase", "usesAiFinalScoring"], "settings": ["COMPOSER_STATUS"], "ui": ["composerFormEl", "composerModeIndicatorEl", "judgeInputs", "liveVoicePreviewEl", "liveVoiceWrapEl", "messageInputEl", "nextActionBtnEl", "statusLineEl"], "platform": ["document"]});
     function create(context) {
         function ensureComposerModeIndicatorUi() {
             if(context.ui.composerModeIndicatorEl)return context.ui.composerModeIndicatorEl;
@@ -181,6 +181,7 @@
 
         function concludeTimedOutHumanPhase(expiredPhase) {
             if (!expiredPhase || context.state.completed) return;
+            context.services.primeAiPreparationForPhase(expiredPhase);
             context.services.appendMessage("moderator", context.services.moderatorLabel(), context.services.l("Time.", "Temps."), {
                 caseNum: expiredPhase.caseNum || 0,
                     phaseId: expiredPhase.id || "",

@@ -22,7 +22,7 @@ test("match catalog groups current models by company and orders strongest to lig
 test("Sol is the participant default and Astra is the judge default", () => {
     assert.equal(catalog.DEFAULT_PARTICIPANT_MODEL, "gpt-6.1-sol");
     assert.equal(catalog.DEFAULT_JUDGE_MODEL, "gpt-6-astra");
-    assert.deepEqual(catalog.REASONING_POLICIES, { participant: "high", judge: "high" });
+    assert.deepEqual(catalog.REASONING_POLICIES, { participant: "medium", judge: "high" });
 });
 
 test("audio defaults use supported OpenAI models", () => {
@@ -62,12 +62,11 @@ test("high output budgets allow reasoning plus visible output without repeated p
 });
 
 
-test("Astra and Fable contestants use medium while every judge stays high",()=>{
+test("every contestant uses medium while every judge stays high",()=>{
     for(const model of catalog.MATCH_MODELS){
-        const expected=["gpt-6-astra","claude-fable-5-1"].includes(model.id)?"medium":"high";
-        assert.equal(catalog.getReasoningEffort(model.id,"participant"),expected);
+        assert.equal(catalog.getReasoningEffort(model.id,"participant"),"medium");
         assert.equal(catalog.getReasoningEffort(model.id,"judge"),"high");
-        assert.equal(catalog.getTextOutputBudget(2800,expected),27800);
+        assert.equal(catalog.getTextOutputBudget(2800,"medium"),27800);
     }
     assert.throws(()=>catalog.getReasoningEffort("unknown","participant"),/not supported/);
     assert.throws(()=>catalog.getReasoningEffort("gpt-6-astra","unknown"),/Reasoning role/);

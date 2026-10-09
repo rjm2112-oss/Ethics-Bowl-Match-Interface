@@ -328,8 +328,16 @@
             participants.forEach(({ name, model }) => {
                 const line = context.platform.document.createElement("div");
                 line.className = "participant-model-line";
-                line.textContent = String(name).trim().toLocaleLowerCase() === String(model).trim().toLocaleLowerCase()
-                    ? name : `${name} — ${model}`;
+                const nameEl = context.platform.document.createElement("div");
+                nameEl.className = "participant-summary-name";
+                nameEl.textContent = name;
+                line.appendChild(nameEl);
+                if (String(name).trim().toLocaleLowerCase() !== String(model).trim().toLocaleLowerCase()) {
+                    const modelEl = context.platform.document.createElement("div");
+                    modelEl.className = "participant-summary-model";
+                    modelEl.textContent = model;
+                    line.appendChild(modelEl);
+                }
                 summary.appendChild(line);
             });
             return summary;

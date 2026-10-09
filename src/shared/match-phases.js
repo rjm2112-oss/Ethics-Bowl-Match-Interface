@@ -4,7 +4,7 @@
     if (root) root.EthicsMatchPhases = value;
 })(typeof globalThis === "object" ? globalThis : this, function () {
     "use strict";
-    const TIMINGS = Object.freeze({ presentationConfer:180, presentationSpeak:300, commentaryConfer:180, commentarySpeak:180, responseConfer:180, responseSpeak:180, judgePeriodTotal:600, judgeAsk:60, judgeAnswer:140 });
+    const TIMINGS = Object.freeze({ presentationConfer:120, presentationSpeak:300, commentaryConfer:60, commentarySpeak:180, responseConfer:60, responseSpeak:180, judgePeriodTotal:600, judgeAsk:60, judgeAnswer:140 });
     function build({leadByCase, locale="en"}) {
         const french=locale==="fr-ca", phases=[];
         const labels=french?{presentation:"Présentation",commentary:"Commentaire",response:"Réplique"}:{presentation:"Presentation",commentary:"Commentary",response:"Response"};

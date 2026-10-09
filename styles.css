@@ -286,11 +286,11 @@ body:has(#judgeModeSelect option[value="hybrid"]:checked) .judge-entry-head { ma
 
 /* Coin toss mechanics and timing diagnostics retain their original hooks. */
 .judge-coin-toss-card { position: absolute; inset: 0; z-index: 2; overflow: auto; padding: 20px 18px; background: #fff; display: flex; flex-direction: column; gap: 12px; }
-.coin-toss-animation { min-height: 220px; perspective: 42rem; display: grid; place-items: center; background: #f7f9fa; border-radius: 5px; margin-top: 8px; }
+.coin-toss-animation { min-height: 180px; perspective: 42rem; display: grid; place-items: center; background: transparent; margin-top: 8px; }
 .coin-toss-shadow { display: none; }
 .coin-toss-coin { --match-coin-start-rotation: 0deg; --match-coin-edge-rotation: 810deg; --match-coin-end-rotation: 720deg; position: relative; width: 7rem; aspect-ratio: 1; overflow: hidden; border-radius: 50%; }
 .coin-toss-rotator { position: absolute; inset: 0; border-radius: inherit; transform: rotateX(0); transform-style: preserve-3d; transition: transform 180ms ease; }
-.coin-face { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; backface-visibility: hidden; background: #fff; transform-style: preserve-3d; }
+.coin-face { position: absolute; inset: 0; overflow: hidden; border-radius: inherit; backface-visibility: hidden; background: transparent; transform-style: preserve-3d; }
 .coin-face-back { transform: rotateX(180deg); }
 .coin-face-logo { position: absolute; top: 50%; left: 50%; width: 108%; height: 108%; max-width: none; object-fit: cover; transform: translate(-50%,-50%); pointer-events: none; }
 .coin-toss-animation.is-flipping .coin-toss-rotator { animation: match-coin-spin-to-result 2.4s linear both; }
@@ -420,21 +420,22 @@ body[data-screen="match"] .app-shell { padding: 0 22px 18px; max-width: 1580px; 
 .match-phase-header .phase-meta { margin-top: 3px; font-size: 10px; }
 .match-phase-header .side-actions { margin: 0; flex-shrink: 0; }
 .match-phase-header #nextActionBtn { width: auto; min-height: 35px; padding: 7px 12px; font-size: 11px; }
-.timer-panel { display: grid; grid-template-columns: 86px minmax(0,1fr); grid-template-rows: auto auto; gap: 3px 12px; padding: 2px 0 12px; border: 0; border-bottom: 1px solid var(--line-strong); flex: none; }
-.timer-display { grid-row: 1; margin: 0; font-size: 43px; letter-spacing: -.5px; align-self: center; }
-.timer-panel #timerHint { grid-column: 2; grid-row: 1; align-self: center; font-size: 11px; }
-.timer-panel #timerControlButtons { grid-column: 1 / -1; grid-row: 2; margin-top: 4px !important; display: flex; flex-wrap: nowrap; gap: 2px; }
-.timer-panel #timerControlButtons button { flex: 1; font-size: 11px; min-height: 35px; padding: 5px 6px; background: transparent; border-color: transparent; }
+.timer-panel { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; padding: 2px 0 16px; border: 0; border-bottom: 1px solid var(--line); flex: none; }
+.timer-display { grid-row: 1; margin: 0; font: 600 40px/1.1 var(--font-ui); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+.timer-panel #timerHint { grid-column: 1; grid-row: 2; font-size: 12px; line-height: 1.5; }
+.timer-panel #timerControlButtons { grid-column: 1; grid-row: 3; margin-top: 4px !important; display: grid; grid-template-columns: minmax(0,.8fr) minmax(0,1fr) minmax(0,1.2fr); gap: 6px; }
+.timer-panel #timerControlButtons button { grid-column: auto; font-size: 11px; min-height: 34px; padding: 6px 4px; white-space: nowrap; background: #fffdf9; border-color: var(--line-strong); }
 .timer-panel #resetTimerBtn { max-width: none; }
+.timer-panel #callTimeBtn { grid-column: 1; width: 100%; min-height: 32px; background: transparent; border-color: var(--line-strong); }
 .chat-card { grid-column: 2; grid-row: 2; border: 0; border-radius: 0; background: transparent; }
-.chat-log { padding: 10px 20px; gap: 0; }
+.chat-log { padding: 10px 20px; gap: 0; scroll-behavior: auto; overflow-anchor: none; }
 .msg-row { flex: 0 0 auto; align-items: start; }
 .bubble { display: grid; grid-template-columns: max-content minmax(0,1fr); grid-template-rows: auto auto; gap: 4px 8px; align-items: start; padding: 7px 0; border-bottom: 1px solid var(--line); }
 .bubble.moderator, .bubble.judge { background: transparent; padding: 7px 0; border-bottom: 1px solid var(--line); border-radius: 0; }
 .bubble-label { grid-column: 1; grid-row: 1; font: 600 12px/1.4 var(--font-ui); margin: 0; color: var(--accent); }
 .bubble.moderator .bubble-label { color: var(--navy); }
 .bubble.judge .bubble-label, .bubble.ai .bubble-label, .bubble.ai-alt .bubble-label { color: var(--navy); }
-.bubble-body { grid-column: 1 / -1; grid-row: 2; font-size: 17.5px; line-height: 1.4; color: var(--text); }
+.bubble-body { grid-column: 1 / -1; grid-row: 2; font-size: 16px; line-height: 1.5; color: var(--text); }
 .bubble-time { grid-column: 2; grid-row: 1; align-self: center; margin: 0; font-size: 10px; line-height: 1.4; }
 .status-line { border: 0; border-top: 1px solid var(--line); padding: 7px 24px; min-height: 29px; color: var(--navy); background: #f0ece6; }
 .composer { padding: 12px 18px 13px; background: #ece7e0; gap: 8px; }
@@ -442,17 +443,22 @@ body[data-screen="match"] .app-shell { padding: 0 22px 18px; max-width: 1580px; 
 .composer-row { justify-content: end; gap: 8px; }
 .composer-row #micBtn { margin-right: auto; border-color: transparent; }
 .composer-row button { min-height: 35px; padding: 7px 11px; font-size: 11px; }
-.right-rail { align-self: start; max-height: 100%; grid-column: 1; grid-row: 2; padding: 14px 14px 10px; background: #eae5e0; border: 1px solid var(--line); gap: 10px; overflow: auto; }
+.right-rail { align-self: start; max-height: 100%; grid-column: 1; grid-row: 2; padding: 18px; background: #f6f2ed; border: 1px solid var(--line); border-radius: 6px; gap: 16px; overflow: auto; }
 .live-summary-side { overflow: visible; flex: none; }
 .live-summary-side > .progress-card { padding: 0; }
 .live-summary-side .panel-kicker { display: none; }
-.match-summary-item:not(.participants-summary), .participants-summary > .match-summary-label { display: none; }
+.match-summary-item:not(.participants-summary) { display: none; }
+.participants-summary > .match-summary-label { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 9px; }
 #currentPhaseMeta, .match-phase-header .panel-kicker { display: none; }
 .match-summary-item { padding: 6px 0; }
 .match-summary-grid { font-size: 11px; }
-.participant-model-summary { gap: 3px; }
+.participant-model-summary { gap: 14px; }
+.participant-model-line { display: grid; gap: 3px; padding-left: 10px; border-left: 2px solid #74728c; }
+.participant-model-line + .participant-model-line { color: inherit; border-left-color: #769b8f; }
+.participant-summary-name { font-size: 13px; font-weight: 600; line-height: 1.35; }
+.participant-summary-model { font-size: 11px; font-weight: 400; color: var(--muted); line-height: 1.4; }
 .live-summary-side .button-cluster { margin-top: 9px !important; }
-#newMatchBtn { min-height: 29px; padding: 5px 0; border: 0; text-decoration: underline; justify-content: start; width: auto; }
+#newMatchBtn { min-height: 34px; padding: 6px 10px; border: 1px solid var(--line-strong); text-decoration: none; width: 100%; background: transparent; }
 .case-reference-side { max-height: none; overflow: visible; gap: 0; flex: none; }
 .match-case-card, .match-case-card.current { background: transparent; border: 0; border-top: 1px solid var(--line-strong); border-radius: 0; }
 .match-case-card summary { padding: 10px 0; font-size: 11px; line-height: 1.5; }
@@ -468,15 +474,15 @@ body[data-screen="match"] .app-shell { padding: 0 22px 18px; max-width: 1580px; 
 .match-progress .phase-list { padding: 10px 0 0; overflow: visible; }
 .phase-item { padding: 8px 8px 8px 15px; }
 .phase-item::before { top: 14px; }
-.judge-side:has(.coin-toss-card:not([hidden])) { min-height: 390px; max-height: none; flex: none; }
-.judge-coin-toss-card { background: #eae5e0; padding: 12px; }
+.judge-side:has(.coin-toss-card:not([hidden])) { min-height: 310px; max-height: none; flex: none; }
+.judge-coin-toss-card { background: transparent; padding: 12px 0; }
 @media (max-width:1250px) {
  .live-layout { grid-template-columns: 250px minmax(0,1fr); gap: 8px 18px; }
  .match-toolbar { grid-template-columns: 250px minmax(0,1fr); gap: 18px; }
  .match-phase-header { gap: 10px; }
  .match-phase-header .phase-title { font-size: 20px; }
  .match-phase-header #nextActionBtn { max-width: none; }
- .timer-panel { grid-template-columns: 78px minmax(0,1fr); gap: 3px 7px; padding-left: 0; }
+ .timer-panel { grid-template-columns: minmax(0,1fr); padding-left: 0; }
  .timer-display { font-size: 38px; }
 
  .chat-log { padding: 8px 18px; }
@@ -491,12 +497,12 @@ body[data-screen="match"] .app-shell { padding: 0 22px 18px; max-width: 1580px; 
  .match-phase-header { flex-direction: row; align-items: center; gap: 10px; }
  .match-phase-header .phase-title { font-size: 19px; }
  .match-phase-header #nextActionBtn { max-width: none; min-height: 28px; padding: 4px 8px; }
- .timer-panel { grid-template-columns: 86px minmax(0,1fr); padding-left: 0; }
+ .timer-panel { grid-template-columns: minmax(0,1fr); padding-left: 0; }
  .timer-panel #timerControlButtons { flex-wrap: wrap; }
  .timer-panel #resetTimerBtn { max-width: none; }
  .right-rail { padding: 12px; }
  .chat-log { padding: 8px 14px; }
- .bubble-body { font-size: 18px; line-height: 1.4; }
+ .bubble-body { font-size: 16px; line-height: 1.5; }
  .composer { padding: 10px 12px; }
 }
 
