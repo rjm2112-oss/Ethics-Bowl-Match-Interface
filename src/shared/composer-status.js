@@ -22,6 +22,8 @@
             key = "complete"; text = t("Match complete. Input is inactive.", "Match terminé. La saisie est inactive.");
         } else if (snapshot.coinTossAnimating) {
             key = "coin-toss"; text = t("Coin toss in progress. Input is inactive.", "Tirage en cours. La saisie est inactive.");
+        } else if (snapshot.waitingForCoinCall) {
+            key = "coin-call"; text = t("Choose Heads or Tails in the coin-toss panel.", "Choisissez Face ou Pile dans le panneau du tirage.");
         } else if (snapshot.waitingForCoinChoice) {
             key = "coin-choice"; text = t(`${snapshot.coinWinner || actor} must choose Lead or Pass for Case #1.`, `${snapshot.coinWinner || actor} doit choisir Mener ou Passer pour le cas 1.`);
         } else if (!snapshot.started) {

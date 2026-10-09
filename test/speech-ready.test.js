@@ -15,7 +15,7 @@ function fixture() {
         WHOLE_SPEECH_TTS_CONCURRENCY:2, WHOLE_SPEECH_MIN_PLAYBACK_RATE:.924, WHOLE_SPEECH_MAX_PLAYBACK_RATE:1.09,
         getPhaseById:()=>phase, getParticipantModel:()=>catalog.DEFAULT_PARTICIPANT_MODEL,
         getWholeSpeechDescriptorForPhase:()=>({kind:"ai",voiceKey:"ai"}), hasCredential:()=>true,
-        ensureSpeechAudioEl:()=>audio, refreshSpeechUi(){}, queueSpeechFollowScroll(){}, invokeSpeechStartCallbacks(){}, renderTranscript(){},
+        ensureSpeechAudioEl:()=>audio, refreshSpeechUi(){}, queueSpeechFollowScroll(){}, invokeSpeechStartCallbacks(){}, renderTranscript(){}, syncSpeechProgressToUi(){},
         console:{info(){},error(){},warn(){}},
         window:{AudioContext:class {},ethicsApi:{audio:{speech:async request=>{calls.speech++;calls.requests.push(request);return {bytes:[1,2],mimeType:"audio/mpeg"};},
             transcribe:async()=>{},alignSpeech:()=>{calls.recognition++;return recognition.promise;},recordSpeechEvent:async()=>{}}}}

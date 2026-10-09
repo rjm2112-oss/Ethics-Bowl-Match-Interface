@@ -42,7 +42,7 @@
         "case2TextInputEl",
         "case2TitleInputEl",
         "chatEl",
-        "coinCallSelectEl",
+        "coinCallPanelEl",
         "coinTossAnimationEl",
         "coinTossCardEl",
         "coinTossCoinEl",
@@ -265,6 +265,9 @@
         function syncScreenVisibility() {
             const showLiveMatch = isLiveMatchScreenVisible();
             context.platform.document.body.dataset.screen = showLiveMatch ? "match" : "setup";
+            context.platform.document.body.dataset.allAi = String(context.state.participantTypes.human === "ai"
+                && context.state.participantTypes.ai === "ai" && context.state.judgeMode === "ai");
+            context.platform.document.body.dataset.opening = String(showLiveMatch && !context.state.started && !context.state.completed);
             if (context.ui.appHeroEl) context.ui.appHeroEl.hidden = showLiveMatch;
             if (context.ui.appStatusStripEl) context.ui.appStatusStripEl.hidden = showLiveMatch;
             if (context.ui.setupScreenEl) context.ui.setupScreenEl.hidden = showLiveMatch;
@@ -425,7 +428,9 @@
             syncCoinTossFaceLabels();
             if (context.ui.judgePanelDefaultEl) context.ui.judgePanelDefaultEl.hidden = !!context.state.showCoinTossCeremony;
             if (context.ui.coinTossCardEl) context.ui.coinTossCardEl.hidden = !context.state.showCoinTossCeremony;
+            if (context.ui.coinCallPanelEl) context.ui.coinCallPanelEl.hidden = !context.state.waitingForCoinCall;
             if (context.ui.coinTossAnimationEl) {
+                context.ui.coinTossAnimationEl.hidden = context.state.waitingForCoinCall;
                 context.ui.coinTossAnimationEl.classList.toggle("is-flipping", context.state.coinTossAnimating);
                 context.ui.coinTossAnimationEl.classList.toggle("is-settled", !context.state.coinTossAnimating && !!context.state.coinResult);
                 context.ui.coinTossAnimationEl.classList.toggle("result-heads", context.state.coinResult === "heads");
@@ -434,12 +439,18 @@
 
             if (!context.ui.coinTossStatusEl) return;
 
+            if (context.state.waitingForCoinCall) {
+                context.ui.coinTossStatusEl.textContent = context.services.l(
+                    `${speakerName("human")}, choose heads or tails.`,
+                    `${speakerName("human")}, choisissez face ou pile.`);
+                return;
+            }
             if (context.state.coinTossAnimating) {
                 context.ui.coinTossStatusEl.textContent = context.services.l("The coin is being flipped to determine who controls Case #1.", "La pièce est lancée pour déterminer qui contrôlera le cas 1.");
                 return;
             }
             if (context.state.waitingForCoinChoice) {
-                context.ui.coinTossStatusEl.textContent = context.services.l("Participant 1 won the toss. Choose whether to lead or pass on Case #1.", "Le participant 1 a gagné le tirage. Choisissez s’il mène ou passe au cas 1.");
+                context.ui.coinTossStatusEl.textContent = context.services.l(`${speakerName(context.state.coinWinner)} won the toss. Choose whether to lead or pass on Case #1.`, `${speakerName(context.state.coinWinner)} a gagné le tirage. Choisissez de mener ou de passer au cas 1.`);
                 return;
             }
             if (context.state.showCoinTossCeremony && context.state.started) {
@@ -533,7 +544,6 @@
                 participantTwoType: context.services.normalizeParticipantMode(context.ui.participantTwoTypeSelectEl?.value || "ai"),
                 humanName: context.ui.humanNameInputEl.value,
                 aiName: context.ui.aiNameInputEl.value,
-                coinCall: context.ui.coinCallSelectEl.value,
                 judgeMode: normalizeJudgeMode(context.ui.judgeModeSelectEl.value),
                 judgePanelPreset: context.settings.MODEL_CATALOG.normalizeJudgePanel(context.ui.judgePanelPresetSelectEl.value),
                 moderatorReadFullCase: context.ui.moderatorReadFullCaseSelectEl.value,
@@ -575,7 +585,6 @@
                     if (typeof parsed.participantTwoType === "string") context.ui.participantTwoTypeSelectEl.value = context.services.normalizeParticipantMode(parsed.participantTwoType);
                     if (typeof parsed.humanName === "string") context.ui.humanNameInputEl.value = parsed.humanName;
                     if (typeof parsed.aiName === "string") context.ui.aiNameInputEl.value = parsed.aiName;
-                    if (typeof parsed.coinCall === "string") context.ui.coinCallSelectEl.value = parsed.coinCall;
                     if (typeof parsed.judgeMode === "string") context.ui.judgeModeSelectEl.value = normalizeJudgeMode(parsed.judgeMode);
                     context.ui.judgePanelPresetSelectEl.value = context.settings.MODEL_CATALOG.normalizeJudgePanel(parsed.judgePanelPreset);
                     if (parsed.moderatorReadFullCase === "yes") context.ui.moderatorReadFullCaseSelectEl.value = "yes";

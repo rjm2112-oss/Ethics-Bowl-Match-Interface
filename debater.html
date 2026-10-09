@@ -111,12 +111,6 @@
             <div id="judgePanelSummary" class="small-note" style="white-space:pre-line"></div>
           </div></section>
   <section class="format-details"><h4 data-i18n-en="Match format" data-i18n-fr="Format du match">Match format</h4><div class="control-group">
-            <label for="coinCallSelect" data-i18n-en="Participant 1 coin call" data-i18n-fr="Tirage du participant 1">Participant 1 coin call</label>
-            <select id="coinCallSelect">
-              <option value="heads" data-i18n-en="Heads" data-i18n-fr="Face">Heads</option>
-              <option value="tails" data-i18n-en="Tails" data-i18n-fr="Pile">Tails</option>
-            </select>
-          </div><div class="control-group">
             <label for="moderatorReadFullCaseSelect" data-i18n-en="Read the full cases aloud" data-i18n-fr="Lire les cas à voix haute">Read the full cases aloud</label>
             <select id="moderatorReadFullCaseSelect">
               <option value="no" data-i18n-en="No" data-i18n-fr="Non">No</option>
@@ -286,6 +280,7 @@
             </article>
           </div>
 
+          <button id="followSpeechBtn" class="secondary-btn follow-speech-btn" type="button" hidden data-i18n-en="Follow speaker" data-i18n-fr="Suivre la parole">Follow speaker</button>
           <div
             id="statusLine"
             class="status-line"
@@ -505,6 +500,13 @@
                 The moderator is preparing the coin toss.
               </div>
 
+              <div id="coinCallPanel" class="coin-call-panel" role="group" aria-labelledby="coinCallPrompt" hidden>
+                <p id="coinCallPrompt" data-i18n-en="What is your call?" data-i18n-fr="Quel est votre choix?">What is your call?</p>
+                <div class="coin-call-buttons">
+                  <button id="coinHeadsBtn" class="primary-btn" type="button" data-i18n-en="Heads" data-i18n-fr="Face">Heads</button>
+                  <button id="coinTailsBtn" class="secondary-btn" type="button" data-i18n-en="Tails" data-i18n-fr="Pile">Tails</button>
+                </div>
+              </div>
               <div id="coinTossAnimation" class="coin-toss-animation" aria-hidden="true">
                 <div class="coin-toss-shadow"></div>
                 <div id="coinTossCoin" class="coin-toss-coin">

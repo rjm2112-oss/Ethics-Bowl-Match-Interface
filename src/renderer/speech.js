@@ -736,6 +736,7 @@
             }
             context.state.currentAudioUrl = prepared.audioUrl;
             audioEl.src = prepared.audioUrl;
+            captureActiveSpeechDelivery();
             const requestedPlaybackRate = Number(prepared.entry?.playbackRate);
             const playbackRate = Number.isFinite(requestedPlaybackRate) && requestedPlaybackRate > 0
                 ? Math.min(context.settings.WHOLE_SPEECH_MAX_PLAYBACK_RATE, Math.max(context.settings.WHOLE_SPEECH_MIN_PLAYBACK_RATE, requestedPlaybackRate))

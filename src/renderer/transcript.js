@@ -19,7 +19,8 @@
     ],
     "ui": [
         "chatEl",
-        "emptyStateEl"
+        "emptyStateEl",
+        "followSpeechBtnEl"
     ],
     "platform": [
         "console",
@@ -152,26 +153,69 @@
         }
 
         function isSpeechFollowActive() {
-            if (context.state.speechProgressMessageIndex < 0) return false;
             return context.state.speechPlaybackActive || context.state.speechProcessing || !!context.state.speechQueue.length || !!context.state.openAiSpeechLookaheadPromise || !!context.state.openAiSpeechLookaheadPrepared;
         }
 
         function clearSpeechFollowRaf() {
             if (context.state.speechFollowRaf) {
-                cancelAnimationFrame(context.state.speechFollowRaf);
+                context.platform.window.cancelAnimationFrame(context.state.speechFollowRaf);
                 context.state.speechFollowRaf = null;
             }
             context.state.speechFollowWantsSmooth = false;
         }
 
         function scrollSpeechProgressIntoView(smooth = true) {
-            // Retained for renderer service compatibility. Only a newly visible
-            // turn may move the viewport; speech progress never follows words.
-            return false;
+            if (context.state.speechFollowPaused || context.state.speechProgressMessageIndex < 0) return false;
+            const chat = context.ui.chatEl;
+            const body = context.services.getMessageBodyEl(context.state.speechProgressMessageIndex);
+            if (!body || typeof chat?.getBoundingClientRect !== "function") return false;
+            const speaking = body.querySelector(".speech-speaking");
+            const message = context.state.transcript[context.state.speechProgressMessageIndex];
+            // A recognition gap between words must not jump back to the start.
+            if (!speaking && context.state.speechFollowMessageIndex === context.state.speechProgressMessageIndex) return false;
+            if (!speaking && context.settings.SPEECH_DELIVERY.has(message)
+                && (context.settings.SPEECH_DELIVERY.previewText(message) === null
+                    || context.state.currentDeliveryPlayback?.entry.chunkIndex > 0)) return false;
+            const target = speaking || body;
+            // A moderator highlight can span a whole paragraph. Anchor its first
+            // line instead of repeatedly trying to fit the entire block.
+            const rect = target.getClientRects?.()[0] || target.getBoundingClientRect();
+            const viewport = chat.getBoundingClientRect();
+            const height = chat.clientHeight;
+            if (!height || !Number.isFinite(rect.top)) return false;
+            context.state.speechFollowMessageIndex = context.state.speechProgressMessageIndex;
+            const inset = Math.min(64, height * .12);
+            if (rect.top >= viewport.top + 8 && rect.top < viewport.bottom - inset) return false;
+            const top = Math.max(0, Math.min(chat.scrollHeight - height, chat.scrollTop + rect.top - viewport.top - inset));
+            if (Math.abs(top - chat.scrollTop) < 1) return false;
+            const reducedMotion = context.platform.window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+            if (typeof chat.scrollTo === "function") chat.scrollTo({ top, behavior: smooth && !reducedMotion ? "smooth" : "auto" });
+            else chat.scrollTop = top;
+            return true;
         }
 
         function queueSpeechFollowScroll(smooth = true) {
-            return false;
+            if (context.state.speechFollowPaused || context.state.speechProgressMessageIndex < 0) return false;
+            if (context.state.speechFollowRaf || typeof context.platform.window.requestAnimationFrame !== "function") return false;
+            context.state.speechFollowWantsSmooth = smooth;
+            context.state.speechFollowRaf = context.platform.window.requestAnimationFrame(() => {
+                context.state.speechFollowRaf = null;
+                scrollSpeechProgressIntoView(context.state.speechFollowWantsSmooth);
+            });
+            return true;
+        }
+
+        function pauseSpeechFollow() {
+            if (!isSpeechFollowActive()) return;
+            context.state.speechFollowPaused = true;
+            clearSpeechFollowRaf();
+            if (context.ui.followSpeechBtnEl) context.ui.followSpeechBtnEl.hidden = false;
+        }
+
+        function resumeSpeechFollow() {
+            context.state.speechFollowPaused = false;
+            if (context.ui.followSpeechBtnEl) context.ui.followSpeechBtnEl.hidden = true;
+            queueSpeechFollowScroll(true);
         }
 
         function syncSpeechProgressToUi(scrollSmooth = false) {
@@ -180,6 +224,7 @@
             const body = context.services.getMessageBodyEl(messageIndex);
             if (!body) return;
             renderSpeechProgressOnBody(body, messageIndex);
+            queueSpeechFollowScroll(true);
         }
 
         function resetSpeechProgressState({ clearUi = true } = {}) {
@@ -327,6 +372,7 @@
                 if (typeof chat.replaceChildren === "function") chat.replaceChildren(context.ui.emptyStateEl);
                 else { chat.innerHTML = ""; chat.appendChild(context.ui.emptyStateEl); }
                 renderedRows.clear();
+                if (context.ui.followSpeechBtnEl) context.ui.followSpeechBtnEl.hidden = true;
                 return;
             }
             context.ui.emptyStateEl.hidden = true;
@@ -353,14 +399,14 @@
             renderedRows.clear();
             for (const [index, entry] of nextRows) renderedRows.set(index, entry);
             syncSpeechProgressToUi(false);
-            // Preserve reading position through every word/chunk update. If the
-            // reader was at the bottom, expose the start of a new turn once.
-            if (followingBottom && addedRows.length && typeof chat.getBoundingClientRect === "function") {
+            // Queued announcements must not pull the current speech off screen.
+            // Playback, rather than message arrival, controls speech following.
+            if (!isSpeechFollowActive() && !context.state.speechFollowPaused && followingBottom && addedRows.length && typeof chat.getBoundingClientRect === "function") {
                 const row = addedRows[addedRows.length - 1];
                 const rowRect = row.getBoundingClientRect();
                 const chatRect = chat.getBoundingClientRect();
                 chat.scrollTop = Math.max(0, previousTop + rowRect.top - chatRect.top);
-            } else chat.scrollTop = previousTop;
+            } else if (chat.scrollTop !== previousTop) chat.scrollTop = previousTop;
         }
 
         function revealTranscriptMessagesForPhase(phaseId) {
@@ -417,7 +463,7 @@
             if (willAutoSpeak) context.services.enqueueTranscriptSpeech(kind, text, transcriptIndex, voiceKey, options);
             return transcriptIndex;
         }
-        return Object.freeze({getMostRecentReadableTranscriptIndex,restoreMessageBodyPlainText,buildNormalizedTextIndexMap,findSpeechRangeInRawText,renderSpeechProgressOnBody,isSpeechFollowActive,clearSpeechFollowRaf,scrollSpeechProgressIntoView,queueSpeechFollowScroll,syncSpeechProgressToUi,resetSpeechProgressState,finishSpeechProgressPlayback,beginSpeechProgressForQueueEntry,renderJudgeScorecardBody,createMessageElement,renderTranscript,revealTranscriptMessagesForPhase,appendMessage});
+        return Object.freeze({getMostRecentReadableTranscriptIndex,restoreMessageBodyPlainText,buildNormalizedTextIndexMap,findSpeechRangeInRawText,renderSpeechProgressOnBody,isSpeechFollowActive,clearSpeechFollowRaf,scrollSpeechProgressIntoView,queueSpeechFollowScroll,pauseSpeechFollow,resumeSpeechFollow,syncSpeechProgressToUi,resetSpeechProgressState,finishSpeechProgressPlayback,beginSpeechProgressForQueueEntry,renderJudgeScorecardBody,createMessageElement,renderTranscript,revealTranscriptMessagesForPhase,appendMessage});
     }
     return Object.freeze({create,dependencies});
 });

@@ -110,7 +110,10 @@ ui.participantOneModelWrapEl = document.getElementById("participantOneModelWrap"
 ui.participantOneModelSelectEl = document.getElementById("participantOneModelSelect");
 ui.humanNameInputEl = document.getElementById("humanNameInput");
 ui.aiNameInputEl = document.getElementById("aiNameInput");
-ui.coinCallSelectEl = document.getElementById("coinCallSelect");
+ui.coinCallPanelEl = document.getElementById("coinCallPanel");
+ui.coinHeadsBtnEl = document.getElementById("coinHeadsBtn");
+ui.coinTailsBtnEl = document.getElementById("coinTailsBtn");
+ui.followSpeechBtnEl = document.getElementById("followSpeechBtn");
 ui.judgeModeSelectEl = document.getElementById("judgeModeSelect");
 ui.judgePanelPresetSelectEl = document.getElementById("judgePanelPresetSelect");
 ui.moderatorReadFullCaseSelectEl = document.getElementById("moderatorReadFullCaseSelect");
@@ -204,6 +207,14 @@ context.ui.newMatchBtnEl?.addEventListener("click", context.services.fullReset);
 context.ui.nextActionBtnEl.addEventListener("click", () => { void context.services.handleNextAction(); });
 context.ui.leadBtnEl.addEventListener("click", () => context.services.handleHumanCoinChoice("lead"));
 context.ui.passBtnEl.addEventListener("click", () => context.services.handleHumanCoinChoice("pass"));
+context.ui.coinHeadsBtnEl.addEventListener("click", () => context.services.handleHumanCoinCall("heads"));
+context.ui.coinTailsBtnEl.addEventListener("click", () => context.services.handleHumanCoinCall("tails"));
+context.ui.followSpeechBtnEl.addEventListener("click", context.services.resumeSpeechFollow);
+context.ui.chatEl.addEventListener("wheel", context.services.pauseSpeechFollow, { passive: true });
+context.ui.chatEl.addEventListener("touchmove", context.services.pauseSpeechFollow, { passive: true });
+context.ui.chatEl.addEventListener("keydown", event => {
+    if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) context.services.pauseSpeechFollow();
+});
 context.ui.pauseTimerBtnEl.addEventListener("click", context.services.pauseTimer);
 context.ui.resumeTimerBtnEl.addEventListener("click", context.services.resumeTimer);
 context.ui.resetTimerBtnEl.addEventListener("click", context.services.resetPhaseTimer);
@@ -244,7 +255,7 @@ context.ui.messageInputEl.addEventListener("input", () => {
     context.services.syncActiveJudgeDraftFromMainComposer({ persist: true });
 });
 [
-    context.ui.participantOneTypeSelectEl, context.ui.participantTwoTypeSelectEl, context.ui.participantOneModelSelectEl, context.ui.humanNameInputEl, context.ui.aiNameInputEl, context.ui.coinCallSelectEl,
+    context.ui.participantOneTypeSelectEl, context.ui.participantTwoTypeSelectEl, context.ui.participantOneModelSelectEl, context.ui.humanNameInputEl, context.ui.aiNameInputEl,
 context.ui.judgeModeSelectEl, context.ui.judgePanelPresetSelectEl, context.ui.moderatorReadFullCaseSelectEl, context.ui.modelSelectEl, context.ui.case1TitleInputEl, context.ui.case1QuestionInputEl, context.ui.case1TextInputEl,
 context.ui.case2TitleInputEl, context.ui.case2QuestionInputEl, context.ui.case2TextInputEl,
 ...context.ui.judgeInputs.flatMap((judge) => [judge.name, judge.question, ...Object.values(judge.humanBreakdown), ...Object.values(judge.aiBreakdown), judge.humanDidWell, judge.humanNeedsImprovement, judge.aiDidWell, judge.aiNeedsImprovement])
@@ -310,6 +321,7 @@ window.addEventListener("pagehide", () => {
     context.services.releaseMicrophoneStream();
 });
 window.addEventListener("beforeunload", () => {
+    context.services.cancelHumanCoinCall();
     context.services.stopSpeechPlayback(false, { resolveCallbacks: false, deliveryReason:"closed" });
     context.services.releaseMicrophoneStream();
 });

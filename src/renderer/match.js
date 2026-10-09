@@ -1,5 +1,5 @@
 (function(root,factory){const api=factory();if(typeof module==="object"&&module.exports)module.exports=api;if(root){root.EthicsRenderer=root.EthicsRenderer||{};root.EthicsRenderer["match"]=api;}})(typeof globalThis==="object"?globalThis:this,function(){"use strict";
-    const dependencies=Object.freeze({"services": ["announceFinalResult", "appendMessage", "appendMessageAndWaitForPlayback", "askAiJudgeQuestion", "buildPhases", "caseLabel", "clearPendingVoiceSubmission", "clearPhaseAwaitingPlayback", "clearScoreboard", "coinSideLabel", "collectHumanJudgeScorecards", "currentPhaseUsesMainComposer", "cutOffCurrentPhaseReadAloudIfNeeded", "ensureSentenceEnding", "ensureSpeechUi", "finalizeActualAudioCutoff", "formatDurationNatural", "generateAiFinalScores", "generateAiTurnForPhase", "getActiveHumanJudgeName", "getCurrentPhase", "getDefaultParticipantOneName", "getDefaultParticipantTwoName", "getLinkedAiPreparationTarget", "getPreparedAiTurnText", "handleAiConferPhase", "hasDesktopBridge", "hideLiveVoicePreview", "hydrateMainComposerFromActiveJudgeDraftIfNeeded", "isAiControlledRole", "isCurrentPhaseAwaitingPlayback", "isFrenchLocale", "isHumanControlledRole", "isHumanJudgeQuestionPhase", "isHumanMainComposerPhase", "isHumanSubmissionPhase", "judgeLabel", "judgeModeLabel", "l", "messageKindForRole", "moderatorLabel", "normalizeJudgeMode", "normalizeMatchModel", "normalizeParticipantMode", "otherRole", "phaseSubtypeLabel", "phaseTimerStartsWithAutoSpeech", "playCoinTossAnimation", "prepareTimerForAutoSpeech", "prepareTimerForPhaseAnnouncement", "primeAiFinalScoringPreparationForPhase", "primeAiPreparationForPhase", "primeAiSpeechPlaybackDuringModerator", "refreshParticipantScoreLabels", "refreshSpeechUi", "refreshTimingTestUi", "releaseMicrophoneStream", "renderMatchCaseReference", "renderMatchSetupSummary", "renderTranscript", "resetLiveSpeechState", "resetVoiceCaptureState", "resolvePendingVoiceSubmission", "revealTranscriptMessagesForPhase", "sanitizeText", "setPendingVoiceSubmission", "setTimerForPhase", "speakerName", "stopRecordingAndFinalize", "stopSpeechPlayback", "stopTimer", "storeJudgeQuestionForPhase", "syncCoinTossUi", "syncParticipantSetupUi", "syncScreenVisibility", "timingTestResultLimitReached", "titleCase", "updateApiKeyUi", "updateComposerModeIndicator", "updateJudgePanelUi", "updateMatchSummaryPlaceholder", "usesAiFinalScoring", "usesAiJudgeQuestions", "validateBeforeStart"], "settings": ["DEFAULT_JUDGE_MODEL", "DEFAULT_PARTICIPANT_MODEL", "MODEL_CATALOG", "credentialState"], "ui": ["aiJudgePanelEl", "aiNameInputEl", "case1QuestionInputEl", "case1TextInputEl", "case1TitleInputEl", "case2QuestionInputEl", "case2TextInputEl", "case2TitleInputEl", "coinCallSelectEl", "coinChoicePanelEl", "computeHumanResultBtnEl", "currentPhaseMetaEl", "currentPhaseTitleEl", "humanJudgePanelEl", "humanNameInputEl", "judgeInputs", "judgeModeSelectEl", "judgePanelPresetSelectEl", "leadBtnEl", "liveVoicePreviewEl", "liveVoiceWrapEl", "messageInputEl", "micBtnEl", "modelSelectEl", "moderatorReadFullCaseSelectEl", "newMatchBtnEl", "nextActionBtnEl", "participantOneModelSelectEl", "participantOneTypeSelectEl", "participantTwoTypeSelectEl", "passBtnEl", "pauseTimerBtnEl", "phaseListEl", "resetMatchBtnEl", "resetTimerBtnEl", "resumeTimerBtnEl", "startMatchBtnEl", "statusLineEl", "submitTurnBtnEl", "timerControlButtonsEl", "timerDisplayEl", "timerHintEl"], "platform": ["console", "document", "window"]});
+    const dependencies=Object.freeze({"services": ["announceFinalResult", "appendMessage", "appendMessageAndWaitForPlayback", "askAiJudgeQuestion", "buildPhases", "caseLabel", "clearPendingVoiceSubmission", "cancelHumanCoinCall", "clearPhaseAwaitingPlayback", "clearScoreboard", "coinSideLabel", "collectHumanJudgeScorecards", "currentPhaseUsesMainComposer", "cutOffCurrentPhaseReadAloudIfNeeded", "ensureSentenceEnding", "ensureSpeechUi", "finalizeActualAudioCutoff", "formatDurationNatural", "generateAiFinalScores", "generateAiTurnForPhase", "getActiveHumanJudgeName", "getCurrentPhase", "getDefaultParticipantOneName", "getDefaultParticipantTwoName", "getLinkedAiPreparationTarget", "getPreparedAiTurnText", "handleAiConferPhase", "hasDesktopBridge", "hideLiveVoicePreview", "hydrateMainComposerFromActiveJudgeDraftIfNeeded", "isAiControlledRole", "isCurrentPhaseAwaitingPlayback", "isFrenchLocale", "isHumanControlledRole", "isHumanJudgeQuestionPhase", "isHumanMainComposerPhase", "isHumanSubmissionPhase", "judgeLabel", "judgeModeLabel", "l", "messageKindForRole", "moderatorLabel", "normalizeJudgeMode", "normalizeMatchModel", "normalizeParticipantMode", "otherRole", "phaseSubtypeLabel", "phaseTimerStartsWithAutoSpeech", "playCoinTossAnimation", "prepareTimerForAutoSpeech", "prepareTimerForPhaseAnnouncement", "primeAiFinalScoringPreparationForPhase", "primeAiPreparationForPhase", "primeAiSpeechPlaybackDuringModerator", "refreshParticipantScoreLabels", "refreshSpeechUi", "refreshTimingTestUi", "releaseMicrophoneStream", "renderMatchCaseReference", "renderMatchSetupSummary", "renderTranscript", "resetLiveSpeechState", "resetVoiceCaptureState", "requestHumanCoinCall", "resolvePendingVoiceSubmission", "revealTranscriptMessagesForPhase", "sanitizeText", "setPendingVoiceSubmission", "setTimerForPhase", "speakerName", "stopRecordingAndFinalize", "stopSpeechPlayback", "stopTimer", "storeJudgeQuestionForPhase", "syncCoinTossUi", "syncParticipantSetupUi", "syncScreenVisibility", "timingTestResultLimitReached", "titleCase", "updateApiKeyUi", "updateComposerModeIndicator", "updateJudgePanelUi", "updateMatchSummaryPlaceholder", "usesAiFinalScoring", "usesAiJudgeQuestions", "validateBeforeStart"], "settings": ["DEFAULT_JUDGE_MODEL", "DEFAULT_PARTICIPANT_MODEL", "MODEL_CATALOG", "credentialState"], "ui": ["aiJudgePanelEl", "aiNameInputEl", "case1QuestionInputEl", "case1TextInputEl", "case1TitleInputEl", "case2QuestionInputEl", "case2TextInputEl", "case2TitleInputEl", "coinChoicePanelEl", "computeHumanResultBtnEl", "currentPhaseMetaEl", "currentPhaseTitleEl", "humanJudgePanelEl", "humanNameInputEl", "judgeInputs", "judgeModeSelectEl", "judgePanelPresetSelectEl", "leadBtnEl", "liveVoicePreviewEl", "liveVoiceWrapEl", "messageInputEl", "micBtnEl", "modelSelectEl", "moderatorReadFullCaseSelectEl", "newMatchBtnEl", "nextActionBtnEl", "participantOneModelSelectEl", "participantOneTypeSelectEl", "participantTwoTypeSelectEl", "passBtnEl", "pauseTimerBtnEl", "phaseListEl", "resetMatchBtnEl", "resetTimerBtnEl", "resumeTimerBtnEl", "startMatchBtnEl", "statusLineEl", "submitTurnBtnEl", "timerControlButtonsEl", "timerDisplayEl", "timerHintEl"], "platform": ["console", "document", "window"]});
     function create(context) {
         function setStatus(text, isError = false) {
             context.state.composerStatusNotice = {
@@ -111,6 +111,11 @@
 
         function updatePhaseHeader() {
             const phase = context.services.getCurrentPhase();
+            if (context.state.waitingForCoinCall) {
+                context.ui.currentPhaseTitleEl.textContent = context.services.l("Call the coin", "Choisissez face ou pile");
+                context.ui.currentPhaseMetaEl.textContent = context.services.l("Choose heads or tails before the flip.", "Choisissez face ou pile avant le tirage.");
+                return;
+            }
             if (context.state.coinTossAnimating) {
                 context.ui.currentPhaseTitleEl.textContent = context.services.l("Coin Toss", "Tirage");
                 context.ui.currentPhaseMetaEl.textContent = context.services.l("Determining who controls Case #1.", "Détermination du contrôle du cas 1.");
@@ -286,6 +291,7 @@
 
 
         function resetStateForNewMatch() {
+            context.services.cancelHumanCoinCall();
             const runId=context.state.matchRunId+1,transcriptionId=context.state.finalTranscriptionRequestId+1,locale=context.state.locale,origins=context.state.caseArchiveOrigins;
             context.state.matchRunId=runId;context.state.finalTranscriptionRequestId=transcriptionId;
             context.services.stopSpeechPlayback(false,{resolveCallbacks:false,deliveryReason:"reset"});
@@ -339,6 +345,8 @@
             try {
                 const { case1, case2 } = await context.services.validateBeforeStart();
                 resetStateForNewMatch();
+                const runId = context.state.matchRunId;
+                const isCurrent = () => runId === context.state.matchRunId && !context.state.sessionClosed;
                 const participantOneMode = context.services.normalizeParticipantMode(context.ui.participantOneTypeSelectEl.value);
                 context.state.participantTypes.human = participantOneMode;
                 context.state.participantTypes.ai = context.services.normalizeParticipantMode(context.ui.participantTwoTypeSelectEl?.value || "ai");
@@ -366,9 +374,7 @@
                     "La gagnante du tirage choisit si elle mène ou passe au cas 1, l’autre participante mène le cas 2, il y a une période des juges après chaque cas, et chaque participante reçoit une question pendant le cas qu’elle mène."
                 ));
 
-                const coinCall = context.ui.coinCallSelectEl.value;
-                const coinResult = Math.random() < 0.5 ? "heads" : "tails";
-                const winner = coinCall === coinResult ? "human" : "ai";
+                let humanCall;
 
                 await context.services.appendMessageAndWaitForPlayback(
                     "moderator",
@@ -380,16 +386,23 @@
                     {
                         onPlaybackStart: () => {
                             context.state.showCoinTossCeremony = true;
+                            if (context.services.isHumanControlledRole("human")) humanCall = context.services.requestHumanCoinCall();
                             refreshControls();
                         }
                     }
                 );
+                if (!isCurrent()) return;
+                const coinCall = humanCall ? await humanCall : (Math.random() < 0.5 ? "heads" : "tails");
+                if (!isCurrent() || !coinCall) return;
                 await context.services.appendMessageAndWaitForPlayback(
                     context.services.messageKindForRole("human"),
                     context.services.speakerName("human"),
                     context.services.titleCase(context.services.coinSideLabel(coinCall)),
-                    { voiceKey: context.services.messageKindForRole("human") }
+                    { voiceKey: context.services.messageKindForRole("human"), substantive: false }
                 );
+                if (!isCurrent()) return;
+                const coinResult = Math.random() < 0.5 ? "heads" : "tails";
+                const winner = coinCall === coinResult ? "human" : "ai";
                 const animationCompleted = await context.services.playCoinTossAnimation(coinCall, coinResult, winner);
                 if (!animationCompleted) return;
 
@@ -548,13 +561,13 @@
                 caseNum: phase.caseNum || 0,
                     phaseId: phase.id,
                     onPlaybackStart: () => {
-                        context.services.primeAiSpeechPlaybackDuringModerator(phase);
-                    },
-                    onPlaybackComplete: () => {
                         if (phase.kind === "moderatorCase" && context.state.currentPhaseIndex === 0) {
                             context.state.showCoinTossCeremony = false;
                             refreshControls();
                         }
+                        context.services.primeAiSpeechPlaybackDuringModerator(phase);
+                    },
+                    onPlaybackComplete: () => {
                         activatePhaseAfterModerator(phase.id);
                     }
             });
@@ -722,6 +735,9 @@
             if (context.state.coinTossAnimating) {
                 context.ui.nextActionBtnEl.textContent = context.services.l("Coin Toss Running", "Tirage en cours");
                 context.ui.nextActionBtnEl.disabled = true;
+            } else if (context.state.waitingForCoinCall) {
+                context.ui.nextActionBtnEl.textContent = context.services.l("Waiting for the coin call", "En attente du choix de la pièce");
+                context.ui.nextActionBtnEl.disabled = true;
             } else if (context.state.waitingForCoinChoice) {
                 context.ui.nextActionBtnEl.textContent = context.services.l("Waiting for Coin Toss Choice", "En attente du choix après le tirage");
                 context.ui.nextActionBtnEl.disabled = true;
@@ -802,15 +818,15 @@
 
             [
                 context.platform.document.getElementById("case1QuestionSelect"), context.platform.document.getElementById("case2QuestionSelect"),
-                context.ui.participantOneTypeSelectEl, context.ui.participantTwoTypeSelectEl, context.ui.participantOneModelSelectEl, context.ui.humanNameInputEl, context.ui.aiNameInputEl, context.ui.coinCallSelectEl,
+                context.ui.participantOneTypeSelectEl, context.ui.participantTwoTypeSelectEl, context.ui.participantOneModelSelectEl, context.ui.humanNameInputEl, context.ui.aiNameInputEl,
                 context.ui.judgeModeSelectEl, context.ui.judgePanelPresetSelectEl, context.ui.moderatorReadFullCaseSelectEl, context.ui.modelSelectEl, context.ui.case1TitleInputEl, context.ui.case1QuestionInputEl, context.ui.case1TextInputEl,
                 context.ui.case2TitleInputEl, context.ui.case2QuestionInputEl, context.ui.case2TextInputEl
             ].forEach((el) => {
                 if (!el) return;
-                el.disabled = context.state.started || context.state.waitingForCoinChoice || locked;
+                el.disabled = context.state.liveScreenActive || context.state.started || context.state.waitingForCoinChoice || locked;
             });
 
-            context.ui.startMatchBtnEl.disabled = !context.services.hasDesktopBridge() || !!context.settings.credentialState.pendingProvider || context.state.started || context.state.waitingForCoinChoice || locked;
+            context.ui.startMatchBtnEl.disabled = !context.services.hasDesktopBridge() || !!context.settings.credentialState.pendingProvider || context.state.liveScreenActive || context.state.started || context.state.waitingForCoinChoice || locked;
             context.ui.resetMatchBtnEl.disabled = locked;
             if (context.ui.newMatchBtnEl) context.ui.newMatchBtnEl.disabled = locked;
 

@@ -36,10 +36,10 @@ function fixture() {
     Object.defineProperty(chat, "scrollHeight", { get: () => chat.children.reduce((sum, child) => sum + child.height, 0) });
     chat.getBoundingClientRect = () => ({ top: 0, bottom: 500 });
     let scrollAnimations = 0;
-    const c = harness.load(["appendMessage", "renderTranscript", "captureActiveSpeechDelivery", "queueSpeechFollowScroll", "scrollSpeechProgressIntoView", "buildSpeechQueueEntries"], {
+    const c = harness.load(["appendMessage", "renderTranscript", "captureActiveSpeechDelivery", "queueSpeechFollowScroll", "scrollSpeechProgressIntoView", "pauseSpeechFollow", "resumeSpeechFollow", "buildSpeechQueueEntries"], {
         state, chatEl: chat, emptyStateEl: element(),
         document: { createElement: element, createTextNode: text => ({ textContent: text }) },
-        window: { requestAnimationFrame() { scrollAnimations++; return 1; } },
+        window: { requestAnimationFrame() { scrollAnimations++; return 1; }, cancelAnimationFrame() {} },
         getMessageBodyEl: index => chat.children.find(row => row.dataset.messageIndex === String(index))?.querySelector(".bubble-body"),
         getVoiceKeyForMessage: kind => kind, shouldAutoSpeakMessage: () => true,
         enqueueTranscriptSpeech() {}, formatBubbleTime: () => "", l: en => en
@@ -78,6 +78,7 @@ test("word updates keep preview nodes and user scroll position stable; only foll
     const audio = { currentTime: .5, played: { length: 1, start: () => 0, end: () => audio.currentTime } };
     state.currentDeliveryPlayback = { message, entry: { transcriptIndex: 0, chunkIndex: 0 }, audio, token: state.speechToken, runId: state.matchRunId };
     chat.scrollTop = 120;
+    state.speechProcessing = true; c.pauseSpeechFollow();
     c.captureActiveSpeechDelivery(); audio.currentTime = 1; c.captureActiveSpeechDelivery();
     assert.equal(message.text, "First heard.");
     assert.equal(chat.children[0], row); assert.equal(row.querySelector(".bubble-body"), body);
@@ -86,6 +87,7 @@ test("word updates keep preview nodes and user scroll position stable; only foll
     assert.equal(chat.scrollTop, 120); assert.equal(scrollAnimations(), 0);
     c.appendMessage("moderator", "Moderator", "Next announcement.");
     assert.equal(chat.scrollTop, 120);
+    state.speechProcessing = false; state.speechFollowPaused = false;
     chat.scrollTop = chat.scrollHeight - chat.clientHeight;
     c.appendMessage("ai-alt", "Morgan", "Another full preview. ".repeat(60).trim());
     assert.equal(chat.scrollTop, 800);
@@ -112,6 +114,62 @@ test("synthesis and delivery share participant chunk boundaries and bounded exac
     assert.ok(c.buildSpeechQueueEntries("moderator", short).every(entry => entry.text.length <= 800));
 });
 
+test("queued announcements do not scroll past the moderator who is still speaking", () => {
+    const { c, state, chat } = fixture();
+    c.appendMessage("moderator", "Moderator", "Current announcement. ".repeat(40));
+    state.speechProcessing = true;
+    state.speechProgressMessageIndex = 0;
+    state.speechProgressSpeakStart = 0;
+    state.speechProgressSpeakEnd = 20;
+    chat.scrollTop = chat.scrollHeight - chat.clientHeight;
+    const before = chat.scrollTop;
+    c.appendMessage("moderator", "Moderator", "A long future case reading. ".repeat(60));
+    assert.equal(chat.scrollTop, before);
+    assert.match(chat.children[0].textContent, /Current announcement/);
+});
+
+test("speech following advances by a viewport section and leaves visible words stationary", () => {
+    const { c, state, chat } = fixture();
+    c.appendMessage("moderator", "Moderator", "Long case. ".repeat(250));
+    state.speechProcessing = true;
+    state.speechProgressMessageIndex = 0;
+    const body = chat.children[0].querySelector(".bubble-body");
+    let wordTop = 100;
+    body.querySelector = () => ({ getClientRects: () => [{top:wordTop-chat.scrollTop,bottom:wordTop-chat.scrollTop+30}] });
+    const positions = [];
+    chat.scrollTo = options => { positions.push(options); chat.scrollTop = options.top; };
+    assert.equal(c.scrollSpeechProgressIntoView(), false);
+    wordTop = 460;
+    assert.equal(c.scrollSpeechProgressIntoView(), true);
+    assert.equal(positions.length, 1);
+    assert.equal(chat.scrollTop, 200); // Clamp at the real end of this message.
+    assert.equal(c.scrollSpeechProgressIntoView(), false);
+    wordTop = 50;
+    c.pauseSpeechFollow();
+    assert.equal(c.scrollSpeechProgressIntoView(), false);
+    assert.equal(chat.scrollTop, 200);
+    c.resumeSpeechFollow();
+    assert.equal(c.scrollSpeechProgressIntoView(false), true);
+    assert.equal(chat.scrollTop, 0);
+});
+
+test("a recognition gap or completed preview never rewinds a speech to its beginning", () => {
+    const { c, state, chat } = fixture();
+    c.appendMessage("ai", "Alex", "A complete argument with a conclusion. ".repeat(45));
+    state.speechProgressMessageIndex = 0;
+    const body = chat.children[0].querySelector(".bubble-body");
+    body.querySelector = () => null;
+    body.getBoundingClientRect = () => ({top:-200,bottom:500});
+    state.speechFollowMessageIndex = 0;
+    chat.scrollTop = 200;
+    assert.equal(c.scrollSpeechProgressIntoView(), false);
+    assert.equal(chat.scrollTop, 200);
+    delivery.registerSpokenTranscript(state.transcript[0], 0, {transcriptText:"Delivered argument."});
+    delivery.completeChunk(state.transcript[0], 0);
+    assert.equal(c.scrollSpeechProgressIntoView(), false);
+    assert.equal(chat.scrollTop, 200);
+});
+
 test("late recognition paints the current preview word with stable spans and no scroll, then clears on cutoff", () => {
     const { c, state, chat, scrollAnimations } = fixture();
     const text="Actual words only.\n\n"+"The complete preview stays readable. ".repeat(30).trim();
@@ -119,7 +177,7 @@ test("late recognition paints the current preview word with stable spans and no 
     const message=state.transcript[0],body=chat.children[0].querySelector(".bubble-body"),nodes=[...body.children],writes=body.textWrites;
     const audio={currentTime:.25,played:{length:1,start:()=>0,end:()=>audio.currentTime}};
     state.currentDeliveryPlayback={message,entry:{transcriptIndex:0,chunkIndex:0},audio,token:state.speechToken,runId:state.matchRunId};
-    chat.scrollTop=125;c.captureActiveSpeechDelivery();assert.equal(body.querySelector(".speech-speaking"),null);
+    chat.scrollTop=125;state.speechProcessing=true;c.pauseSpeechFollow();c.captureActiveSpeechDelivery();assert.equal(body.querySelector(".speech-speaking"),null);
     delivery.registerSpokenTranscript(message,0,{transcriptText:"Actual words only.",alignment:alignRecognized("Actual words only.",[{word:"Actual",start:0,end:.5},{word:"words",start:.5,end:1},{word:"only",start:1,end:1.5}],2)});
     c.captureActiveSpeechDelivery();assert.equal(body.querySelector(".speech-speaking").textContent,"Actual");assert.equal(message.text,"");
     audio.currentTime=.75;c.captureActiveSpeechDelivery();assert.equal(body.querySelector(".speech-speaking").textContent,"words");assert.equal(message.text,"Actual");

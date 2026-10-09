@@ -28,6 +28,7 @@
                 matchRunId: context.state.matchRunId, notice: context.state.composerStatusNotice,
                 phaseReady: context.state.phaseReady, busy: context.state.busy,
                 coinTossAnimating: context.state.coinTossAnimating, waitingForCoinChoice: context.state.waitingForCoinChoice,
+                waitingForCoinCall: context.state.waitingForCoinCall,
                 coinWinner: context.state.coinWinner ? context.services.speakerName(context.state.coinWinner) : "",
                 actor: phase?.speaker ? context.services.speakerName(phase.speaker) : "",
                 judge: context.services.isHumanJudgeQuestionPhase(phase) ? context.services.getActiveHumanJudgeName(phase) : phase?.judgeNumber ? context.services.judgeLabel(phase.judgeNumber) : "",
