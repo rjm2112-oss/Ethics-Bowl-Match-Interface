@@ -107,13 +107,17 @@
         }
 
 
-        function callTimeForCurrentPhase() {
-            const phase = context.services.getCurrentPhase();
-            if (!context.state.started || context.state.completed || !context.state.phaseReady || !phase?.duration) return false;
-            context.state.timer.remaining = 0;
-            context.ui.timerDisplayEl.textContent = "00:00";
-            context.services.handleTimedPhaseExpiration(phase);
-            return true;
+        function remainingPhaseSeconds() {
+            const timer=context.state.timer;
+            const elapsed=timer.running && Number.isFinite(timer.lastTickAtMs)
+                ? Math.max(0,context.platform.window.performance.now()-timer.lastTickAtMs)/1000 : 0;
+            return Math.max(0,timer.remaining-elapsed);
+        }
+
+        function consumeSkippedSpeechSeconds(seconds) {
+            if(!Number.isFinite(seconds)||seconds<0)throw new Error("Invalid skipped speech duration.");
+            context.state.timer.remaining=Math.max(0,context.state.timer.remaining-seconds);
+            context.ui.timerDisplayEl.textContent=context.services.formatClock(context.state.timer.remaining);
         }
 
 
@@ -127,8 +131,10 @@
             context.ui.timerHintEl.classList.remove("error");
             if (!phase?.duration) return;
             context.state.timer.running = true;
+            context.state.timer.lastTickAtMs = context.platform.window.performance.now();
             context.state.timer.intervalId = context.platform.window.setInterval(() => {
                 if (!context.state.timer.running) return;
+                context.state.timer.lastTickAtMs = context.platform.window.performance.now();
                 const currentPhase = context.services.getCurrentPhase();
                 if (context.services.maybeCompletePreparedAiConferral(currentPhase)) return;
                 context.state.timer.remaining -= 1;
@@ -137,7 +143,7 @@
                 const thresholds = warningThresholdsForPhase(currentPhase);
                 thresholds.forEach((threshold) => {
                     const key = `${currentPhase?.id || ""}:${threshold}`;
-                    if (context.state.timer.remaining === threshold && !context.state.timer.warnedKeys.has(key)) {
+                    if (context.state.timer.remaining <= threshold && context.state.timer.remaining > threshold-1 && !context.state.timer.warnedKeys.has(key)) {
                         context.state.timer.warnedKeys.add(key);
                         context.services.setStatus(timerWarningLabel(currentPhase, threshold));
                     }
@@ -183,6 +189,7 @@
         function resumeTimer() {
             if (!context.state.timer.intervalId || context.state.timer.remaining <= 0) return;
             context.state.timer.running = true;
+            context.state.timer.lastTickAtMs = context.platform.window.performance.now();
             context.ui.timerHintEl.textContent = context.services.l("Timer resumed.", "Minuterie reprise.");
             context.services.refreshControls();
         }
@@ -210,7 +217,7 @@
             context.services.setStatus(context.services.isFrenchLocale() ? `Minuterie réinitialisée pour ${phase.title}.` : `Timer reset for ${phase.title}.`);
             context.services.refreshControls();
         }
-        return Object.freeze({stopTimer,prepareTimerForPhaseAnnouncement,phaseTimerStartsWithAutoSpeech,phasePreloadsAutoSpeechDuringModerator,phaseUsesNaturalModeratorHandoff,prepareTimerForAutoSpeech,warningThresholdsForPhase,timerWarningLabel,callTimeForCurrentPhase,setTimerForPhase,startTimerWithAutoSpeech,pauseTimer,resumeTimer,resetPhaseTimer});
+        return Object.freeze({stopTimer,prepareTimerForPhaseAnnouncement,phaseTimerStartsWithAutoSpeech,phasePreloadsAutoSpeechDuringModerator,phaseUsesNaturalModeratorHandoff,prepareTimerForAutoSpeech,warningThresholdsForPhase,timerWarningLabel,remainingPhaseSeconds,consumeSkippedSpeechSeconds,setTimerForPhase,startTimerWithAutoSpeech,pauseTimer,resumeTimer,resetPhaseTimer});
     }
     return Object.freeze({create,dependencies});
 });

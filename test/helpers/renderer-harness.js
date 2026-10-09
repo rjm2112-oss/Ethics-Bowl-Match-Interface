@@ -9,7 +9,7 @@ function install(globals,names) {
     const supplied={...(globals.state||{})};globals.state=Object.assign(globals.state||{},require("../../src/shared/match-session").create({locale:globals.activeLocale||"en",modelCatalog:catalog}),supplied);const state=globals.state;
     state.locale=globals.activeLocale||state.locale||"en";state.phases=state.phases||[];state.aiFinalJudgeScoringTranscripts=state.aiFinalJudgeScoringTranscripts||{};
     if(Object.hasOwn(globals,"activeLocale"))Object.defineProperty(globals,"activeLocale",{configurable:true,get:()=>state.locale,set:value=>{state.locale=value;}});
-    const window=Object.assign({setTimeout,clearTimeout,setInterval,clearInterval,...shared},globals.window||{});
+    const window=Object.assign({setTimeout,clearTimeout,setInterval,clearInterval,performance,...shared},globals.window||{});
     const proxy=values=>new Proxy(values,{get:(target,key)=>Object.hasOwn(globals,key)?globals[key]:target[key],set:(_target,key,value)=>{globals[key]=value;return true;}});
     const context={state,ui:proxy({}),settings:proxy(defaults),platform:proxy({window,document:{},localStorage:{getItem:()=>""},console,URL,Blob,AbortController,performance}),services:{}};
     // Window combines the real shared APIs with each test's mocked IPC boundary.

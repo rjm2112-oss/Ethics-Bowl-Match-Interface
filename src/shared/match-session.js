@@ -102,6 +102,8 @@
     timingPreviewTranscriptIndex: -1,
     timingPreviewResolve: null,
     currentSpeechRecordPlayback: null,
+    currentSpeechSkip: null,
+    skipSpeechTranscriptIndex: -1,
     spokenAudioTranscriptionPending: false,
     spokenAudioCutoffRetry: null,
     caseArchiveOrigins: {}

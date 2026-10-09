@@ -1,7 +1,22 @@
 (function(root,factory){const api=factory();if(typeof module==="object"&&module.exports)module.exports=api;if(root){root.EthicsRenderer=root.EthicsRenderer||{};root.EthicsRenderer["speech"]=api;}})(typeof globalThis==="object"?globalThis:this,function(){"use strict";
-    const dependencies=Object.freeze({"services": ["beginSpeechProgressForQueueEntry", "clearTimingTestAudioCache", "countWords", "ensureSpeechAudioEl", "ensureSpeechUi", "finalizeAllSpeechPlaybackCallbacks", "finalizeSpeechPlaybackForMessage", "finishSpeechProgressPlayback", "formatClock", "formatPreciseDuration", "getCurrentPhase", "getJudgeModel", "getParticipantModel", "getPhaseById", "getTimingTestFastForwardForMessage", "hasCredential", "invokeSpeechStartCallbacks", "isAiControlledRole", "isFrenchLocale", "l", "markSpeechChunkComplete", "messageKindForRole", "normalizeSpeechText", "primeAiPreparationForPhase", "queueSpeechFollowScroll", "refreshSpeechUi", "renderTimingTestResults", "renderTranscript", "resetSpeechProgressState", "restoreMessageBodyPlainText", "syncSpeechProgressToUi", "revokeTimingTestAudioChunks", "safeBridgeErrorMessage", "sanitizeText", "setStatus", "stopTimer", "trackSpeechChunksForMessage", "updateComposerModeIndicator", "waitMs"], "settings": ["AI_TURN_PROMPTS", "AUDIO_MODELS", "AUTO_SPEAK_MESSAGE_KINDS", "AUTO_SPEAK_VOICES", "MAX_TTS_CHARS", "MODEL_CATALOG", "MODERATOR_SPEECH_INSTRUCTIONS", "SPEECH_CHUNK_MAX", "SPEECH_DELIVERY", "SPEECH_TIMING", "STOP_SPEECH_ERROR", "TIMED_SPEECH_TIMER_LEAD_MS", "TIMING_TEST_MODE", "TIMING_TEST_TTS_CONCURRENCY", "WHOLE_SPEECH_MAX_PLAYBACK_RATE", "WHOLE_SPEECH_MIN_PLAYBACK_RATE", "WHOLE_SPEECH_TTS_CONCURRENCY"], "ui": ["timerDisplayEl", "timerHintEl"], "platform": ["AbortController", "Blob", "URL", "console", "window"]});
+    const dependencies=Object.freeze({"services": ["consumeSkippedSpeechSeconds", "remainingPhaseSeconds", "handleTimedPhaseExpiration", "beginSpeechProgressForQueueEntry", "clearTimingTestAudioCache", "countWords", "ensureSpeechAudioEl", "ensureSpeechUi", "finalizeAllSpeechPlaybackCallbacks", "finalizeSpeechPlaybackForMessage", "finishSpeechProgressPlayback", "formatClock", "formatPreciseDuration", "getCurrentPhase", "getJudgeModel", "getParticipantModel", "getPhaseById", "hasCredential", "invokeSpeechStartCallbacks", "isAiControlledRole", "isFrenchLocale", "l", "markSpeechChunkComplete", "messageKindForRole", "normalizeSpeechText", "primeAiPreparationForPhase", "queueSpeechFollowScroll", "refreshSpeechUi", "renderTimingTestResults", "renderTranscript", "resetSpeechProgressState", "restoreMessageBodyPlainText", "syncSpeechProgressToUi", "revokeTimingTestAudioChunks", "safeBridgeErrorMessage", "sanitizeText", "setStatus", "stopTimer", "trackSpeechChunksForMessage", "updateComposerModeIndicator", "waitMs"], "settings": ["AI_TURN_PROMPTS", "AUDIO_MODELS", "AUTO_SPEAK_MESSAGE_KINDS", "AUTO_SPEAK_VOICES", "MAX_TTS_CHARS", "MODEL_CATALOG", "MODERATOR_SPEECH_INSTRUCTIONS", "SPEECH_CHUNK_MAX", "SPEECH_DELIVERY", "SPEECH_TIMING", "STOP_SPEECH_ERROR", "TIMED_SPEECH_TIMER_LEAD_MS", "TIMING_TEST_MODE", "WHOLE_SPEECH_MAX_PLAYBACK_RATE", "WHOLE_SPEECH_MIN_PLAYBACK_RATE", "WHOLE_SPEECH_TTS_CONCURRENCY"], "ui": ["timerDisplayEl", "timerHintEl"], "platform": ["AbortController", "Blob", "URL", "console", "window"]});
     function create(context) {
         const participantSpeechInstructions = "Keep one consistent speaker identity, vocal register, pitch range, accent, and natural measured cadence throughout this speech. Use the selected voice without changing character or delivery style between paragraphs. Preserve the supplied wording exactly.";
+        function canSkipCurrentSpeech() {
+            const prepared=context.state.currentSpeechRecordPlayback;
+            return !context.state.sessionClosed && !!prepared && context.state.speechPlaybackActive
+                && Number.isFinite(prepared.naturalDurationSeconds) && prepared.naturalDurationSeconds>0
+                && typeof context.state.currentSpeechSkip==="function"
+                && context.state.skipSpeechTranscriptIndex!==prepared.entry.transcriptIndex;
+        }
+
+        function skipCurrentSpeech() {
+            if(!canSkipCurrentSpeech())return false;
+            context.state.skipSpeechTranscriptIndex=context.state.currentSpeechRecordPlayback.entry.transcriptIndex;
+            context.state.currentSpeechSkip();
+            context.services.refreshSpeechUi();
+            return true;
+        }
         function rejectCurrentSpeechPlayback() {
             if (typeof context.state.currentSpeechReject === "function") {
                 const reject = context.state.currentSpeechReject;
@@ -72,13 +87,16 @@
             let cutoffPromise=Promise.resolve();
             const stoppedRunId=context.state.matchRunId;
             for (const message of context.state.transcript || []) {
+                if(context.settings.SPEECH_DELIVERY.isPreviewOnly(message)){context.settings.SPEECH_DELIVERY.endPreview(message);continue;}
                 if (message.speechDeliveryState === "pending" || (teardown && message.speechDeliveryState === "transcribing")) {
                     const active = context.state.currentDeliveryPlayback;
                     if (teardown || deliveryReason === "error") context.settings.SPEECH_DELIVERY.sealUnresolved(message);
                     else {
                         context.settings.SPEECH_DELIVERY.beginSpokenCutoff(message);
                         const prepared=active?.message===message?context.state.currentSpeechRecordPlayback:null;
-                        const through=prepared?Math.min(active.audio.currentTime,context.settings.SPEECH_DELIVERY.playedThrough(active.audio)):0;
+                        const through=prepared?(Number.isFinite(prepared.skipPlaybackThrough)
+                            ? Math.max(0,Math.min(prepared.naturalDurationSeconds,prepared.skipPlaybackThrough))
+                            : Math.min(active.audio.currentTime,context.settings.SPEECH_DELIVERY.playedThrough(active.audio))):0;
                         if(!prepared || through<=.01)context.settings.SPEECH_DELIVERY.finalizeSpokenCutoff(message,"");
                         else cutoffPromise=finalizeActualAudioCutoff(message,prepared,through,stoppedRunId);
                     }
@@ -94,6 +112,8 @@
             const stoppedRecord=context.state.currentSpeechRecordPlayback;
             if(stoppedRecord){const audio=context.state.speechAudioEl,message=context.state.transcript[stoppedRecord.entry?.transcriptIndex];saveSpeechRecordNotice("playback_stopped",stoppedRecord,{reason:deliveryReason,matchRunId:capturedRunId,capturedPrefix:capturedDeliveryText,mediaTime:audio?.currentTime||0,playedThrough:context.settings.SPEECH_DELIVERY.playedThrough(audio),wallMilliseconds:Date.now()-(stoppedRecord.playbackWallStart||Date.now()),deliveredPrefix:message?.text||"",deliveryState:message?.speechDeliveryState||"",timerRemaining:context.state.timer.remaining});}
             context.state.currentDeliveryPlayback = null;
+            context.state.currentSpeechSkip = null;
+            context.state.skipSpeechTranscriptIndex = -1;
             context.state.speechToken += 1;
             revokeQueuedPreparedSpeechAudio();
             context.state.speechQueue = [];
@@ -338,7 +358,7 @@
 
         function prepareWholeSpeechAudioForPhase(phase, text, descriptor = getWholeSpeechDescriptorForPhase(phase)) {
             const normalized = context.services.normalizeSpeechText(text);
-            if (context.state.sessionClosed || context.settings.TIMING_TEST_MODE || !phase?.id || !phase.duration || !normalized || !descriptor) return Promise.resolve(null);
+            if (context.state.sessionClosed || !phase?.id || !phase.duration || !normalized || !descriptor) return Promise.resolve(null);
             const existing = context.state.wholeSpeechPreparations.get(phase.id);
             if (wholeSpeechPreparationMatches(existing, phase, normalized, descriptor)) return existing.promise;
             if (existing) clearWholeSpeechPreparation(phase.id);
@@ -472,6 +492,9 @@
             const entry = prepared.entry;
             const transcriptIndex = Number(entry.transcriptIndex);
             if (!Number.isInteger(transcriptIndex) || transcriptIndex < 0) return null;
+            const message = context.state.transcript[transcriptIndex] || {};
+            const phase = context.services.getPhaseById(message.phaseId);
+            if (!context.settings.SPEECH_TIMING.shouldReportTimedMessage(message, phase)) return null;
             const chunkCount = Math.max(1, Math.round(Number(entry.chunkCount) || 1));
             let measurement = context.state.timingTestMeasurements.get(transcriptIndex);
             if (!measurement) {
@@ -482,8 +505,7 @@
                     audioDurationSeconds: 0,
                     timerLeadMs: 0,
                     decodeMethods: new Set(),
-                    audioChunks: new Array(chunkCount),
-                    fastForwarded: context.services.getTimingTestFastForwardForMessage(transcriptIndex)
+                    audioChunks: new Array(chunkCount)
                 };
                 context.state.timingTestMeasurements.set(transcriptIndex, measurement);
             }
@@ -494,20 +516,15 @@
             measurement.decodeMethods.add(decodedTiming.method);
             const chunkIndex = Math.max(0, Math.min(chunkCount - 1, Math.round(Number(entry.chunkIndex) || 0)));
             measurement.audioChunks[chunkIndex] = {
-                audioUrl: prepared.audioUrl,
+                // Playback owns and revokes its URL. The optional replay owns
+                // a separate URL, so observing timing cannot change playback.
+                audioUrl: context.platform.URL.createObjectURL(new context.platform.Blob([prepared.audioBytes], {type: prepared.mimeType})),
                 mimeType: prepared.mimeType,
                 text: entry.text
             };
-            prepared.retainedForTimingPreview = true;
             if (measurement.measuredChunks < measurement.chunkCount) return null;
 
             context.state.timingTestMeasurements.delete(transcriptIndex);
-            const message = context.state.transcript[transcriptIndex] || {};
-            const phase = context.services.getPhaseById(message.phaseId);
-            if (!context.settings.SPEECH_TIMING.shouldReportTimedMessage(message, phase)) {
-                context.services.revokeTimingTestAudioChunks(measurement.audioChunks);
-                return null;
-            }
 
             const wordCount = context.settings.SPEECH_DELIVERY.has(message) ? context.settings.SPEECH_DELIVERY.wordCount(message) : context.services.countWords(message.text);
             const naturalSummary = context.settings.SPEECH_TIMING.summarizeTimedSpeech({
@@ -538,7 +555,6 @@
                 chunkCount: measurement.chunkCount,
                 decodeMethods: [...measurement.decodeMethods],
                 audioChunks: measurement.audioChunks,
-                fastForwarded: measurement.fastForwarded,
                 naturalSummary,
                 playbackPlan,
                 summary: adjustedSummary
@@ -557,43 +573,10 @@
                 remainingSeconds: Number(result.summary.remainingSeconds.toFixed(2)),
                 overrunSeconds: Number(result.summary.overrunSeconds.toFixed(2)),
                 adjustedWordsPerMinute: Number(result.summary.wordsPerMinute.toFixed(1)),
-                chunks: result.chunkCount,
-                fastForwarded: result.fastForwarded
+                chunks: result.chunkCount
             })}`);
             context.services.renderTimingTestResults();
             return result;
-        }
-
-
-        function freezeTimerForFastForwardedSpeech(entry) {
-            if (!context.settings.TIMING_TEST_MODE) return;
-            const message = context.state.transcript[entry?.transcriptIndex] || {};
-            const phase = context.services.getPhaseById(message.phaseId);
-            if (!context.settings.SPEECH_TIMING.isTimedSpokenPhase(phase)) return;
-            context.services.stopTimer();
-            context.state.timer.phaseId = phase.id;
-            context.state.timer.remaining = phase.duration;
-            context.ui.timerDisplayEl.textContent = context.services.formatClock(phase.duration);
-            context.ui.timerHintEl.textContent = context.services.l(
-                "Fast-forwarding generated audio; exact virtual clock use will be reported.",
-                "Avance rapide de l’audio généré; l’utilisation exacte de la minuterie virtuelle sera indiquée."
-            );
-        }
-
-
-        function showFastForwardedTimingOnTimer(result) {
-            if (!result?.fastForwarded || context.state.timer.phaseId !== result.phaseId) return;
-            context.state.timer.remaining = Math.max(0, Math.ceil(result.summary.signedRemainingSeconds));
-            context.ui.timerDisplayEl.textContent = context.services.formatClock(context.state.timer.remaining);
-            context.ui.timerHintEl.textContent = result.summary.overrunSeconds > 0
-                ? context.services.l(
-                    `Virtual ${result.playbackPlan.playbackRate.toFixed(3)}× result: ${context.services.formatPreciseDuration(result.summary.overrunSeconds)} over time.`,
-                    `Résultat virtuel à ${result.playbackPlan.playbackRate.toFixed(3)}× : dépassement de ${context.services.formatPreciseDuration(result.summary.overrunSeconds)}.`
-                )
-                : context.services.l(
-                    `Virtual ${result.playbackPlan.playbackRate.toFixed(3)}× result: ${context.services.formatPreciseDuration(result.summary.remainingSeconds)} left.`,
-                    `Résultat virtuel à ${result.playbackPlan.playbackRate.toFixed(3)}× : ${context.services.formatPreciseDuration(result.summary.remainingSeconds)} restant.`
-                );
         }
 
 
@@ -673,7 +656,7 @@
                     await saveSpeechRecord("generated_audio",prepared,{naturalDurationSeconds:timing.durationSeconds,chunkWords:context.services.countWords(entry.text),chunkText:entry.text,cacheReused:!!result?.cacheReused});
                     context.platform.console.info(`[speech-chunk-audit] ${JSON.stringify({phaseId:entry.phaseId,kind:entry.kind,transcriptIndex:entry.transcriptIndex,chunkIndex:entry.chunkIndex,wordCount:context.services.countWords(entry.text),characters:entry.text.length,naturalDurationSeconds:timing.durationSeconds})}`);
                     if (!isCurrent()) { revokePreparedSpeechAudio(prepared); return null; }
-                    if (["ai","ai-alt","judge"].includes(entry.kind) && !context.settings.TIMING_TEST_MODE) {
+                    if (["ai","ai-alt","judge","moderator"].includes(entry.kind)) {
                         const bridge = getAudioBridge();
                         if (typeof bridge.alignSpeech !== "function") throw new Error("The speech word-alignment bridge is unavailable.");
                         // Recognition starts during preparation and can finish
@@ -759,7 +742,7 @@
                 else if (prepared.wordAlignmentPromise) {
                     prepared.wordAlignmentPromise.then(alignment => {
                         if (token === context.state.speechToken && runId === context.state.matchRunId
-                            && !context.state.sessionClosed && message.speechDeliveryState === "pending") {
+                            && !context.state.sessionClosed && (message.speechDeliveryState === "pending" || context.settings.SPEECH_DELIVERY.isPreviewOnly(message))) {
                             context.settings.SPEECH_DELIVERY.registerSpokenTranscript(message,prepared.entry.chunkIndex,alignment);
                         }
                     }).catch(() => {});
@@ -801,7 +784,7 @@
                         reject(error);
                     };
                     let ending = false;
-                    const resolveRef = async () => {
+                    const resolveRef = async (skipPlayback = false) => {
                         if (settled || ending || token !== context.state.speechToken) return;
                         ending = true;
                         try {
@@ -812,23 +795,57 @@
                             }
                         } catch (error) { rejectRef(error); return; }
                         try {
-                            if (context.settings.SPEECH_DELIVERY.hasFullPlayback(audioEl)
+                            if ((skipPlayback || context.settings.SPEECH_DELIVERY.hasFullPlayback(audioEl))
                                 && context.settings.SPEECH_DELIVERY.completeChunk(message, prepared.entry?.chunkIndex)) context.services.renderTranscript();
                             notifyPlaybackStarted();
-                            saveSpeechRecordNotice("playback_ended",prepared,{mediaTime:audioEl.currentTime,wallMilliseconds:Date.now()-prepared.playbackWallStart,playedThrough:context.settings.SPEECH_DELIVERY.playedThrough(audioEl),playbackRate:audioEl.playbackRate,deliveredPrefix:message?.text||"",deliveryState:message?.speechDeliveryState||"complete",timerRemaining:context.state.timer.remaining});
+                            saveSpeechRecordNotice(skipPlayback ? "playback_skipped" : "playback_ended",prepared,{mediaTime:audioEl.currentTime,wallMilliseconds:Date.now()-prepared.playbackWallStart,playedThrough:context.settings.SPEECH_DELIVERY.playedThrough(audioEl),playbackRate:audioEl.playbackRate,deliveredPrefix:message?.text||"",deliveryState:message?.speechDeliveryState||"complete",timerRemaining:context.state.timer.remaining});
                             settled = true;
                             if (context.state.currentSpeechReject === rejectRef) context.state.currentSpeechReject = null;
                             resolve();
                         } catch (error) { rejectRef(error); }
                     };
+                    let skipping=false;
+                    const skipRef=()=>{
+                        if(skipping||settled||ending)return;
+                        skipping=true;
+                        void (async()=>{
+                            // Reuse recognition already in flight. Do not cancel
+                            // generation, substitute draft text, or request a retry.
+                            if(prepared.wordAlignmentPromise)await prepared.wordAlignmentPromise;
+                            if(settled||ending||token!==context.state.speechToken||runId!==context.state.matchRunId)return;
+                            const phase=context.services.getCurrentPhase();
+                            const timed=phase?.id===prepared.entry.phaseId && !!phase.duration && context.state.timer.phaseId===phase.id;
+                            const remaining=timed?context.services.remainingPhaseSeconds():Infinity;
+                            const mediaTime=Math.max(0,Math.min(prepared.naturalDurationSeconds,audioEl.currentTime||0));
+                            const skippedSeconds=(prepared.naturalDurationSeconds-mediaTime)/playbackRate;
+                            if(message)message.speechPlaybackSkipped=true;
+                            audioEl.pause();
+                            if(timed && skippedSeconds>remaining){
+                                // Jump only to the existing speech limit. The
+                                // normal cutoff transcribes that exact audio prefix.
+                                prepared.skipPlaybackThrough=mediaTime+remaining*playbackRate;
+                                await saveSpeechRecord("playback_skip_to_limit",prepared,{through:prepared.skipPlaybackThrough,remainingSeconds:remaining});
+                                if(token!==context.state.speechToken||runId!==context.state.matchRunId)return;
+                                context.state.timer.remaining=0;
+                                context.ui.timerDisplayEl.textContent=context.services.formatClock(0);
+                                void context.services.handleTimedPhaseExpiration(phase);
+                                return;
+                            }
+                            if(timed)context.services.consumeSkippedSpeechSeconds(skippedSeconds);
+                            await resolveRef(true);
+                        })().catch(rejectRef);
+                    };
                     context.state.currentSpeechReject = rejectRef;
+                    context.state.currentSpeechSkip = skipRef;
                     audioEl.ontimeupdate = captureActiveSpeechDelivery;
                     audioEl.onplaying = notifyPlaybackStarted;
                     audioEl.onpause=()=>saveSpeechRecordNotice("playback_paused",prepared,{mediaTime:audioEl.currentTime,wallTime:Date.now(),timerRemaining:context.state.timer.remaining});
-                    audioEl.onended = resolveRef;
+                    audioEl.onended = () => resolveRef(false);
                     audioEl.onerror = () => rejectRef(new Error("AI voice playback failed."));
                     try {
                         const playPromise = audioEl.play();
+                        context.services.refreshSpeechUi();
+                        if(context.state.skipSpeechTranscriptIndex===prepared.entry.transcriptIndex)skipRef();
                         if (playPromise && typeof playPromise.then === "function") {
                             playPromise.then(notifyPlaybackStarted).catch(() => rejectRef(new Error("Voice autoplay was blocked.")));
                         }
@@ -837,6 +854,7 @@
                     }
                 });
             } finally {
+                if(context.state.currentSpeechRecordPlayback===prepared)context.state.currentSpeechSkip=null;
                 if(context.state.currentSpeechRecordPlayback===prepared)context.state.currentSpeechRecordPlayback=null;
                 if (context.state.currentDeliveryPlayback?.token === token) context.state.currentDeliveryPlayback = null;
                 if (token === context.state.speechToken && runId === context.state.matchRunId && !context.state.sessionClosed) {
@@ -939,81 +957,12 @@
         }
 
 
-        function takeNextTimingTestSpeechMessage() {
-            if (!context.settings.TIMING_TEST_MODE || !context.state.speechQueue.length) return [];
-            const transcriptIndex = context.state.speechQueue[0]?.transcriptIndex;
-            const entries = [];
-            while (context.state.speechQueue[0]?.transcriptIndex === transcriptIndex) {
-                entries.push(context.state.speechQueue.shift());
-            }
-            return entries;
-        }
-
-
-        async function processConcurrentTimingTestSpeech(entries, token) {
-            const results = await context.settings.SPEECH_TIMING.mapWithConcurrency(
-                entries,
-                context.settings.TIMING_TEST_TTS_CONCURRENCY,
-                async (entry) => {
-                    let prepared = null;
-                    try {
-                        prepared = await fetchOpenAiSpeechAudio(entry, token, {
-                            controllerKind: "timing-test",
-                            trackController: false
-                        });
-                        if (!prepared) return { entry, cancelled: true };
-                        const decodedTiming = prepared.decodedTiming || await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
-                        return { entry, prepared, decodedTiming };
-                    } catch (error) {
-                        return { entry, prepared, error };
-                    }
-                }
-            );
-
-            if (token !== context.state.speechToken || results.some((result) => result.cancelled)) {
-                results.forEach((result) => revokePreparedSpeechAudio(result.prepared));
-                return false;
-            }
-
-            const failed = results.find((result) => result.error);
-            if (failed) {
-                results.forEach((result) => revokePreparedSpeechAudio(result.prepared));
-                if (!failed.error?.speechEntry) failed.error.speechEntry = failed.entry;
-                throw failed.error;
-            }
-
-            results.forEach(({ prepared, decodedTiming }) => {
-                const timingTestResult = recordTimingTestSpeechChunk(prepared, decodedTiming);
-                context.services.invokeSpeechStartCallbacks(prepared.entry?.transcriptIndex);
-                freezeTimerForFastForwardedSpeech(prepared.entry);
-                showFastForwardedTimingOnTimer(timingTestResult);
-                context.services.markSpeechChunkComplete(prepared.entry.transcriptIndex);
-                if (!prepared.retainedForTimingPreview) revokePreparedSpeechAudio(prepared);
-            });
-            context.services.refreshSpeechUi();
-            await context.services.waitMs(0);
-            return token === context.state.speechToken;
-        }
-
-
         async function processSpeechQueue(token = context.state.speechToken) {
             if (context.state.sessionClosed || context.state.speechProcessing) return;
             context.state.speechProcessing = true;
             context.services.refreshSpeechUi();
             try {
                 while (token === context.state.speechToken) {
-                    if (context.settings.TIMING_TEST_MODE) {
-                        const timingEntries = takeNextTimingTestSpeechMessage();
-                        if (!timingEntries.length) break;
-                        try {
-                            if (!await processConcurrentTimingTestSpeech(timingEntries, token)) break;
-                        } catch (error) {
-                            if (token !== context.state.speechToken || error?.name === "AbortError" || error?.message === context.settings.STOP_SPEECH_ERROR) break;
-                            handleOpenAiSpeechFailure(error, token);
-                            break;
-                        }
-                        continue;
-                    }
                     let prepared = null;
                     try {
                         prepared = await getNextOpenAiSpeechPrepared(token);
@@ -1023,6 +972,7 @@
                         break;
                     }
                     if (!prepared) break;
+                    recordTimingTestSpeechChunk(prepared, prepared.decodedTiming);
                     kickOpenAiSpeechLookahead(token);
                     const minimumHandoffGapMs = Math.max(0, Math.min(3000, Number(prepared.entry?.minimumHandoffGapMs) || 0));
                     const elapsedSincePriorSpeechMs = context.state.lastSpeechEndedAtMs
@@ -1055,6 +1005,8 @@
                         if (token !== context.state.speechToken || context.state.sessionClosed) break;
                         context.state.lastSpeechEndedAtMs = Date.now();
                         context.services.markSpeechChunkComplete(prepared.entry.transcriptIndex);
+                        if(!context.state.speechChunkCounts.has(prepared.entry.transcriptIndex)
+                            && context.state.skipSpeechTranscriptIndex===prepared.entry.transcriptIndex)context.state.skipSpeechTranscriptIndex=-1;
                     } catch (error) {
                         if (token !== context.state.speechToken || error?.name === "AbortError" || error?.message === context.settings.STOP_SPEECH_ERROR) break;
                         handleOpenAiSpeechFailure(error, token);
@@ -1158,8 +1110,7 @@
             if (!normalized) return;
             const phase = context.services.getPhaseById(options.phaseId);
             const descriptor = getWholeSpeechDescriptorForPhase(phase);
-            const usePreparedWholeSpeech = !context.settings.TIMING_TEST_MODE
-                && !!descriptor
+            const usePreparedWholeSpeech = !!descriptor
                 && descriptor.kind === kind
                 && descriptor.voiceKey === (voiceKey || kind);
             if (usePreparedWholeSpeech) {
@@ -1185,11 +1136,9 @@
 
         function shouldAutoSpeakMessage(kind, text, options = {}) {
             if (options.silent || !context.settings.AUTO_SPEAK_MESSAGE_KINDS.has(kind) || !context.services.normalizeSpeechText(text)) return false;
-            if (!context.settings.TIMING_TEST_MODE) return true;
-            const phase = context.services.getPhaseById(options.phaseId);
-            return context.settings.SPEECH_TIMING.shouldReportTimedMessage({ kind }, phase);
+            return true;
         }
-        return Object.freeze({rejectCurrentSpeechPlayback,resetSpeechAudioEl,revokeQueuedPreparedSpeechAudio,clearOpenAiSpeechLookahead,stopSpeechPlayback,splitTextByWords,chunkTextForSpeech,buildSpeechQueueEntries,ensureSentenceEnding,getAudioBridge,toUint8Array,blobToByteArray,decodeSpeechAudioDuration,getWholeSpeechDescriptorForPhase,wholeSpeechPreparationMatches,releaseWholeSpeechPreparation,clearWholeSpeechPreparation,clearAllWholeSpeechPreparations,prepareWholeSpeechAudioForPhase,primeWholeSpeechAudioForPhase,recordTimingTestSpeechChunk,freezeTimerForFastForwardedSpeech,showFastForwardedTimingOnTimer,createLocalAbortError,speechRecordContext,saveSpeechRecord,saveSpeechRecordNotice,fetchOpenAiSpeechAudio,encodePlayedAudioWav,finalizeActualAudioCutoff,captureActiveSpeechDelivery,playPreparedOpenAiSpeechChunk,kickOpenAiSpeechLookahead,getNextOpenAiSpeechPrepared,handleOpenAiSpeechFailure,revokePreparedSpeechAudio,takeNextTimingTestSpeechMessage,processConcurrentTimingTestSpeech,processSpeechQueue,enqueuePreparedWholeSpeech,enqueueTranscriptSpeech,shouldAutoSpeakMessage});
+        return Object.freeze({canSkipCurrentSpeech,skipCurrentSpeech,rejectCurrentSpeechPlayback,resetSpeechAudioEl,revokeQueuedPreparedSpeechAudio,clearOpenAiSpeechLookahead,stopSpeechPlayback,splitTextByWords,chunkTextForSpeech,buildSpeechQueueEntries,ensureSentenceEnding,getAudioBridge,toUint8Array,blobToByteArray,decodeSpeechAudioDuration,getWholeSpeechDescriptorForPhase,wholeSpeechPreparationMatches,releaseWholeSpeechPreparation,clearWholeSpeechPreparation,clearAllWholeSpeechPreparations,prepareWholeSpeechAudioForPhase,primeWholeSpeechAudioForPhase,recordTimingTestSpeechChunk,createLocalAbortError,speechRecordContext,saveSpeechRecord,saveSpeechRecordNotice,fetchOpenAiSpeechAudio,encodePlayedAudioWav,finalizeActualAudioCutoff,captureActiveSpeechDelivery,playPreparedOpenAiSpeechChunk,kickOpenAiSpeechLookahead,getNextOpenAiSpeechPrepared,handleOpenAiSpeechFailure,revokePreparedSpeechAudio,processSpeechQueue,enqueuePreparedWholeSpeech,enqueueTranscriptSpeech,shouldAutoSpeakMessage});
     }
     return Object.freeze({create,dependencies});
 });

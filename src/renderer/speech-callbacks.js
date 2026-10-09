@@ -1,5 +1,5 @@
 (function(root,factory){const api=factory();if(typeof module==="object"&&module.exports)module.exports=api;if(root){root.EthicsRenderer=root.EthicsRenderer||{};root.EthicsRenderer["speech-callbacks"]=api;}})(typeof globalThis==="object"?globalThis:this,function(){"use strict";
-    const dependencies=Object.freeze({"services": [], "settings": ["SPEECH_DELIVERY", "TIMING_TEST_MODE"], "ui": [], "platform": ["console", "window"]});
+    const dependencies=Object.freeze({"services": [], "settings": ["SPEECH_DELIVERY"], "ui": [], "platform": ["console", "window"]});
     function create(context) {
         function registerSpeechCompletionCallback(transcriptIndex, callback) {
             if (!Number.isInteger(transcriptIndex) || transcriptIndex < 0 || typeof callback !== "function") return;
@@ -59,9 +59,7 @@
             context.state.speechChunkCounts.delete(transcriptIndex);
             const message = context.state.transcript?.[transcriptIndex];
             if (message?.speechDeliveryState === "pending") {
-                // Fast-forwarded timing fixtures measure audio but do not deliver it.
-                if (context.settings.TIMING_TEST_MODE) message.speechDeliveryState = "simulated";
-                else if (context.settings.SPEECH_DELIVERY.has(message)) context.settings.SPEECH_DELIVERY.sealUnresolved(message);
+                if (context.settings.SPEECH_DELIVERY.has(message)) context.settings.SPEECH_DELIVERY.sealUnresolved(message);
                 else message.speechDeliveryState = "unresolved";
             }
             invokeSpeechCompletionCallbacks(transcriptIndex);

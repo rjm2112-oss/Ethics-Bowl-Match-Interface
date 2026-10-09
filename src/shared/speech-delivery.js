@@ -6,7 +6,7 @@
     "use strict";
     const sources=new WeakMap();
     const normalize=text=>String(text||"").replace(/\s+/g," ").trim();
-    function attach(message,originalText,chunks,locale="en") {
+    function attach(message,originalText,chunks,locale="en",{displayOnly=false}={}) {
         if(!message || sources.has(message))throw Error("Speech delivery is already attached or invalid.");
         const parts=chunks.map(normalize),normalized=normalize(originalText);
         if(!parts.length || parts.some(part=>!part) || parts.join(" ")!==normalized)throw Error("Speech chunks do not exactly cover the original text.");
@@ -16,12 +16,16 @@
             for(let char=0;char<token[0].length;char++)normToRaw[cursor++]=token.index+char;
         }
         let offset=0;const chunkOffsets=parts.map(part=>{const start=offset;offset+=part.length+1;return start;});
-        sources.set(message,{normalized,preview,locale,normToRaw,chunkOffsets,wordCount:normalized.split(" ").length,parts,recognized:[],completed:[],next:0,closed:false});
-        message.text="";message.speechDeliveryState="pending";
+        sources.set(message,{normalized,preview,locale,normToRaw,chunkOffsets,wordCount:normalized.split(" ").length,parts,recognized:[],completed:[],next:0,closed:false,displayOnly});
+        if(!displayOnly){message.text="";message.speechDeliveryState="pending";}
     }
     function has(message){return sources.has(message);}
     // Display-only generated preview. It never enters message.text or model context.
-    function previewText(message){const source=sources.get(message);return source && !source.closed && message.speechDeliveryState==="pending" ? source.preview : null;}
+    function previewText(message){const source=sources.get(message);return source && !source.closed && (source.displayOnly || message.speechDeliveryState==="pending") ? source.preview : null;}
+    function displayText(message){return sources.get(message)?.displayText??null;}
+    function saveDisplayText(message,source){source.displayText=wordAlignment.restoreParagraphs(source.preview,message.text,source.locale);source.preview="";}
+    function isPreviewOnly(message){return sources.get(message)?.displayOnly===true;}
+    function endPreview(message){const source=sources.get(message);if(!source?.displayOnly)return;source.closed=true;source.preview="";source.parts=[];source.recognized=[];}
     function matchesSource(message,text){return sources.get(message)?.normalized===normalize(text);}
     function wordCount(message){return sources.get(message)?.wordCount??0;}
     function registerSpokenTranscript(message,index,transcript) {
@@ -35,25 +39,25 @@
     }
     function completeChunk(message,index) {
         const source=sources.get(message);
-        if(!source || source.closed || message.speechDeliveryState!=="pending" || index!==source.next)return false;
+        if(!source || source.closed || (!source.displayOnly && message.speechDeliveryState!=="pending") || index!==source.next)return false;
         const recognized=source.recognized[index];if(!recognized)throw Error("The played audio needs a speech transcript.");
-        source.completed.push(recognized.text);source.next++;message.text=source.completed.join(" ");
-        if(source.next===source.parts.length){message.speechDeliveryState="complete";source.closed=true;source.normalized="";source.preview="";source.parts=[];}
+        source.completed.push(recognized.text);source.next++;if(!source.displayOnly)message.text=source.completed.join(" ");
+        if(source.next===source.parts.length){message.speechDeliveryState="complete";source.closed=true;saveDisplayText(message,source);source.normalized="";source.parts=[];}
         return true;
     }
     function beginSpokenCutoff(message) {
         const source=sources.get(message);if(!source || source.closed || message.speechDeliveryState!=="pending")return false;
-        source.closed=true;source.preview="";message.text=source.completed.join(" ");message.speechDeliveryState="transcribing";return true;
+        source.closed=true;message.text=source.completed.join(" ");message.speechDeliveryState="transcribing";return true;
     }
     function finalizeSpokenCutoff(message,actualPartialText) {
         const source=sources.get(message);
         if(!source || !["transcribing","unresolved"].includes(message.speechDeliveryState) || typeof actualPartialText!=="string")return false;
-        message.text=[...source.completed,actualPartialText.trim()].filter(Boolean).join(" ");message.speechDeliveryState="cutoff";source.normalized="";source.parts=[];source.recognized=[];return true;
+        message.text=[...source.completed,actualPartialText.trim()].filter(Boolean).join(" ");message.speechDeliveryState="cutoff";saveDisplayText(message,source);source.normalized="";source.parts=[];source.recognized=[];return true;
     }
     function sealUnresolved(message) {
         const source=sources.get(message);
         if(!source || !["pending","transcribing"].includes(message.speechDeliveryState))return false;
-        source.closed=true;source.preview="";message.text=source.completed.join(" ");message.speechDeliveryState="unresolved";return true;
+        source.closed=true;message.text=source.completed.join(" ");saveDisplayText(message,source);message.speechDeliveryState="unresolved";return true;
     }
     function playedThrough(audio) {
         let covered=0;
@@ -93,6 +97,7 @@
         return recognizedProgress(source.recognized[index],source.completed.join(" "),Math.min(audio.currentTime,playedThrough(audio)));
     }
     function captureProgress(message,index,audio) {
+        if(isPreviewOnly(message))return false;
         const progress=confirmedProgress(message,index,audio);
         if(!progress || message.text===progress.text)return false;
         message.text=progress.text;return true;
@@ -110,7 +115,7 @@
     }
     function previewHighlightRange(message,index,audio) {
         const source=sources.get(message),recognized=source?.recognized[index],alignment=recognized?.previewAlignment;
-        if(!source||source.closed||message.speechDeliveryState!=="pending"||index!==source.next
+        if(!source||source.closed||(!source.displayOnly&&message.speechDeliveryState!=="pending")||index!==source.next
             ||!alignment||!recognized.previewMap?.length||audio?.ended
             ||!Number.isFinite(audio?.currentTime)||audio.currentTime<0)return null;
         const through=playedThrough(audio),time=audio.currentTime;
@@ -166,5 +171,5 @@
             return Object.freeze({text:fullText,deliveryState:"complete"});
         } catch { return null; }
     }
-    return Object.freeze({attach,has,previewText,matchesSource,wordCount,registerSpokenTranscript,completeChunk,beginSpokenCutoff,finalizeSpokenCutoff,sealUnresolved,playedThrough,captureProgress,highlightRange,previewHighlightRange,hasFullPlayback,predictTimedTranscript});
+    return Object.freeze({attach,has,previewText,displayText,isPreviewOnly,endPreview,matchesSource,wordCount,registerSpokenTranscript,completeChunk,beginSpokenCutoff,finalizeSpokenCutoff,sealUnresolved,playedThrough,captureProgress,highlightRange,previewHighlightRange,hasFullPlayback,predictTimedTranscript});
 });

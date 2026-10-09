@@ -51,7 +51,6 @@ const CREDENTIAL_STATUS_TIMEOUT_MS = 4000;
 const FINAL_SCORECARD_REQUEST_TIMEOUT_MS = 240000;
 const MAX_TTS_CHARS = 4096;
 const SPEECH_CHUNK_MAX = 800;
-const TIMING_TEST_TTS_CONCURRENCY = 4;
 const WHOLE_SPEECH_TTS_CONCURRENCY = 2;
 const WHOLE_SPEECH_MIN_PLAYBACK_RATE = 0.924;
 const WHOLE_SPEECH_MAX_PLAYBACK_RATE = 1.09;
@@ -185,7 +184,7 @@ ui.judgeInputs = [1, 2, 3].map((n) => ({
                                           aiNeedsImprovement: document.getElementById(`judge${n}AiNeedsImprovement`)
 }));
 ui.stopSpeechBtnEl = null;
-ui.callTimeBtnEl = null;
+ui.skipSpeechBtnEl = null;
 ui.composerModeIndicatorEl = null;
 ui.manageApiKeysBtnEl = null;
 ui.apiKeyStatusBadgeEl = null;
@@ -195,7 +194,7 @@ ui.apiKeyDialogTitleEl = null;
 ui.apiKeyDialogCopyEl = null;
 ui.apiKeyDialogCloseBtnEl = null;
 ui.credentialUiByProvider = {};
-const context = {state,ui,settings:{STORAGE_KEYS,LOGO_CANDIDATES,MODEL_CATALOG,AI_TURN_PROMPTS,ETHICS_BOWL_RUBRIC,PHASE_TIMER_POLICY,SPEECH_TIMING,COMPOSER_STATUS,SPEECH_DELIVERY,SCORECARD_TALLY,TIMING_TEST_MODE,TIMING_TEST_AUTO_START,TIMING_TEST_RESULT_LIMIT,AVAILABLE_MATCH_MODELS,DEFAULT_PARTICIPANT_MODEL,DEFAULT_JUDGE_MODEL,JUDGE_REASONING_EFFORT,AUDIO_MODELS,FINAL_JUDGE_SCORECARD_JSON_SCHEMA,TIMINGS,CREDENTIAL_STATUS_TIMEOUT_MS,FINAL_SCORECARD_REQUEST_TIMEOUT_MS,MAX_TTS_CHARS,SPEECH_CHUNK_MAX,TIMING_TEST_TTS_CONCURRENCY,WHOLE_SPEECH_TTS_CONCURRENCY,WHOLE_SPEECH_MIN_PLAYBACK_RATE,WHOLE_SPEECH_MAX_PLAYBACK_RATE,PARTICIPANT_SPEECH_HANDOFF_GAP_MS,TIMED_SPEECH_TIMER_LEAD_MS,MODERATOR_SPEECH_INSTRUCTIONS,AUTO_SPEAK_MESSAGE_KINDS,AUTO_SPEAK_VOICES,STOP_SPEECH_ERROR,INITIAL_LOCALE,credentialState,caseArchiveOriginsKey},services:{normalizeLocale,getInitialLocale},platform:{window: typeof window === "undefined" ? undefined : window,document: typeof document === "undefined" ? undefined : document,navigator: typeof navigator === "undefined" ? undefined : navigator,localStorage: typeof localStorage === "undefined" ? undefined : localStorage,Image: typeof Image === "undefined" ? undefined : Image,Option: typeof Option === "undefined" ? undefined : Option,URL: typeof URL === "undefined" ? undefined : URL,Blob: typeof Blob === "undefined" ? undefined : Blob,FileReader: typeof FileReader === "undefined" ? undefined : FileReader,MediaRecorder: typeof MediaRecorder === "undefined" ? undefined : MediaRecorder,AbortController: typeof AbortController === "undefined" ? undefined : AbortController,performance: typeof performance === "undefined" ? undefined : performance,console: typeof console === "undefined" ? undefined : console}};
+const context = {state,ui,settings:{STORAGE_KEYS,LOGO_CANDIDATES,MODEL_CATALOG,AI_TURN_PROMPTS,ETHICS_BOWL_RUBRIC,PHASE_TIMER_POLICY,SPEECH_TIMING,COMPOSER_STATUS,SPEECH_DELIVERY,SCORECARD_TALLY,TIMING_TEST_MODE,TIMING_TEST_AUTO_START,TIMING_TEST_RESULT_LIMIT,AVAILABLE_MATCH_MODELS,DEFAULT_PARTICIPANT_MODEL,DEFAULT_JUDGE_MODEL,JUDGE_REASONING_EFFORT,AUDIO_MODELS,FINAL_JUDGE_SCORECARD_JSON_SCHEMA,TIMINGS,CREDENTIAL_STATUS_TIMEOUT_MS,FINAL_SCORECARD_REQUEST_TIMEOUT_MS,MAX_TTS_CHARS,SPEECH_CHUNK_MAX,WHOLE_SPEECH_TTS_CONCURRENCY,WHOLE_SPEECH_MIN_PLAYBACK_RATE,WHOLE_SPEECH_MAX_PLAYBACK_RATE,PARTICIPANT_SPEECH_HANDOFF_GAP_MS,TIMED_SPEECH_TIMER_LEAD_MS,MODERATOR_SPEECH_INSTRUCTIONS,AUTO_SPEAK_MESSAGE_KINDS,AUTO_SPEAK_VOICES,STOP_SPEECH_ERROR,INITIAL_LOCALE,credentialState,caseArchiveOriginsKey},services:{normalizeLocale,getInitialLocale},platform:{window: typeof window === "undefined" ? undefined : window,document: typeof document === "undefined" ? undefined : document,navigator: typeof navigator === "undefined" ? undefined : navigator,localStorage: typeof localStorage === "undefined" ? undefined : localStorage,Image: typeof Image === "undefined" ? undefined : Image,Option: typeof Option === "undefined" ? undefined : Option,URL: typeof URL === "undefined" ? undefined : URL,Blob: typeof Blob === "undefined" ? undefined : Blob,FileReader: typeof FileReader === "undefined" ? undefined : FileReader,MediaRecorder: typeof MediaRecorder === "undefined" ? undefined : MediaRecorder,AbortController: typeof AbortController === "undefined" ? undefined : AbortController,performance: typeof performance === "undefined" ? undefined : performance,console: typeof console === "undefined" ? undefined : console}};
 for(const name of ["locale","credentials","setup","transcript","speech","speech-view","speech-callbacks","timing","model-client","context","prompts","turns","questions","scoring","score-format","scorecards","composer","pending-submission","voice","match","phase-access","coin-choice","timer"])Object.assign(context.services,window.EthicsRenderer[name].create(context));
 for(const name of ["locale","credentials","setup","transcript","speech","speech-view","speech-callbacks","timing","model-client","context","prompts","turns","questions","scoring","score-format","scorecards","composer","pending-submission","voice","match","phase-access","coin-choice","timer"]) {
     const dependencies=window.EthicsRenderer[name].dependencies;

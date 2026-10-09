@@ -1,7 +1,7 @@
 "use strict";
 const fs=require("node:fs"),path=require("node:path");
 const VERSION=1;
-const PLAYBACK_EVENTS=new Set(["generated_audio","playback_started","playback_paused","playback_resumed","playback_ended","playback_stopped","speech_plan","delivery_finalized"]);
+const PLAYBACK_EVENTS=new Set(["generated_audio","playback_started","playback_paused","playback_resumed","playback_ended","playback_stopped","playback_skipped","playback_skip_to_limit","speech_plan","delivery_finalized"]);
 function createGenerationRecords(directory) {
     fs.mkdirSync(directory,{recursive:true,mode:0o700});
     const format=path.join(directory,"format.json"),requests=new Map(),audioByHash=new Map(),recognitionByHash=new Map();

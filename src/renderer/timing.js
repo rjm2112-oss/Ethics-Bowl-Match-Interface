@@ -21,10 +21,6 @@
     ]
 });
     function create(context) {
-        function getTimingTestFastForwardForMessage() {
-            return context.settings.TIMING_TEST_MODE;
-        }
-
         function ensureTimingPreviewAudioEl() {
             if (context.state.timingPreviewAudioEl && context.platform.document.body.contains(context.state.timingPreviewAudioEl)) {
                 return context.state.timingPreviewAudioEl;
@@ -142,8 +138,8 @@
                         `Série de ${context.settings.TIMING_TEST_RESULT_LIMIT} tests terminée. Tous les résultats restent ouverts ci-dessous pour comparaison.`
                     )
                     : context.services.l(
-                        `Generated audio is measured exactly and adjusted virtually without playback.${context.settings.TIMING_TEST_RESULT_LIMIT ? ` Result ${resultCount} of ${context.settings.TIMING_TEST_RESULT_LIMIT}.` : ""}`,
-                        `L’audio généré est mesuré avec exactitude et ajusté virtuellement sans lecture.${context.settings.TIMING_TEST_RESULT_LIMIT ? ` Résultat ${resultCount} sur ${context.settings.TIMING_TEST_RESULT_LIMIT}.` : ""}`
+                        `Timing measurements use the normal speech preparation, recognition, and playback flow.${context.settings.TIMING_TEST_RESULT_LIMIT ? ` Result ${resultCount} of ${context.settings.TIMING_TEST_RESULT_LIMIT}.` : ""}`,
+                        `Les mesures utilisent le déroulement normal de préparation, de reconnaissance et de lecture audio.${context.settings.TIMING_TEST_RESULT_LIMIT ? ` Résultat ${resultCount} sur ${context.settings.TIMING_TEST_RESULT_LIMIT}.` : ""}`
                     );
             }
             context.ui.timingTestResultsEl.replaceChildren();
@@ -198,8 +194,8 @@
                 const technical = context.platform.document.createElement("div");
                 technical.className = "small-note";
                 technical.textContent = context.services.l(
-                    `${result.summary.wordCount} words • ${result.chunkCount} audio chunks • calculated without playback`,
-                    `${result.summary.wordCount} mots • ${result.chunkCount} segments audio • calculé sans lecture`
+                    `${result.summary.wordCount} words • ${result.chunkCount} audio chunks • measured audio; normal match playback`,
+                    `${result.summary.wordCount} mots • ${result.chunkCount} segments audio • audio mesuré; lecture normale du match`
                 );
 
                 const playButton = context.platform.document.createElement("button");
@@ -230,7 +226,7 @@
             return context.settings.TIMING_TEST_RESULT_LIMIT > 0
                 && context.state.timingTestResults.length >= context.settings.TIMING_TEST_RESULT_LIMIT;
         }
-        return Object.freeze({getTimingTestFastForwardForMessage,ensureTimingPreviewAudioEl,stopTimingTestPreview,revokeTimingTestAudioChunks,clearTimingTestAudioCache,playTimingTestResult,renderTimingTestResults,refreshTimingTestUi,timingTestResultLimitReached});
+        return Object.freeze({ensureTimingPreviewAudioEl,stopTimingTestPreview,revokeTimingTestAudioChunks,clearTimingTestAudioCache,playTimingTestResult,renderTimingTestResults,refreshTimingTestUi,timingTestResultLimitReached});
     }
     return Object.freeze({create,dependencies});
 });

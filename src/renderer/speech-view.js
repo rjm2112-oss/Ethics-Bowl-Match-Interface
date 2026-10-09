@@ -1,5 +1,5 @@
 (function(root,factory){const api=factory();if(typeof module==="object"&&module.exports)module.exports=api;if(root){root.EthicsRenderer=root.EthicsRenderer||{};root.EthicsRenderer["speech-view"]=api;}})(typeof globalThis==="object"?globalThis:this,function(){"use strict";
-    const dependencies=Object.freeze({"services": ["callTimeForCurrentPhase", "ensureComposerModeIndicatorUi", "getCurrentPhase", "l", "stopSpeechPlayback", "updateComposerModeIndicator"], "settings": [], "ui": ["callTimeBtnEl", "composerFormEl", "nextActionBtnEl", "stopSpeechBtnEl", "timerControlButtonsEl"], "platform": ["document"]});
+    const dependencies=Object.freeze({"services": ["canSkipCurrentSpeech", "skipCurrentSpeech", "ensureComposerModeIndicatorUi", "getCurrentPhase", "l", "stopSpeechPlayback", "updateComposerModeIndicator"], "settings": [], "ui": ["skipSpeechBtnEl", "composerFormEl", "nextActionBtnEl", "stopSpeechBtnEl", "timerControlButtonsEl"], "platform": ["document"]});
     function create(context) {
         function ensureSpeechAudioEl() {
             if (context.state.speechAudioEl && context.platform.document.body.contains(context.state.speechAudioEl)) return context.state.speechAudioEl;
@@ -40,12 +40,17 @@
 
 
         function refreshSpeechUi() {
+            if(context.ui.skipSpeechBtnEl){
+                context.ui.skipSpeechBtnEl.disabled=!context.services.canSkipCurrentSpeech();
+                context.ui.skipSpeechBtnEl.textContent=context.services.l("Skip speech", "Passer la lecture");
+                context.ui.skipSpeechBtnEl.title=context.services.l("Skip this segment’s playback while preserving its time limit and transcript.", "Passer la lecture de ce segment en conservant sa limite de temps et sa transcription.");
+            }
             if (!context.ui.stopSpeechBtnEl) return;
             const protectedSpeech = isParticipantSpeechProtected();
             context.ui.stopSpeechBtnEl.disabled = protectedSpeech || !isSpeechPlaybackActive();
             context.ui.stopSpeechBtnEl.textContent = context.services.l("Stop Reading", "Arrêter la lecture");
             context.ui.stopSpeechBtnEl.title = protectedSpeech
-                ? context.services.l("Participant speeches continue until they finish or time is called.", "Les interventions continuent jusqu’à leur fin ou à l’annonce de la fin du temps.") : "";
+                ? context.services.l("Participant speeches continue until they finish or reach their time limit.", "Les interventions continuent jusqu’à leur fin ou à leur limite de temps.") : "";
             const audio = context.state.speechAudioEl;
             if (audio && audio.dataset.composerStatusBound !== "1") {
                 audio.dataset.composerStatusBound = "1";
@@ -56,18 +61,16 @@
 
 
         function ensureSpeechUi() {
-            if (!context.ui.callTimeBtnEl) {
-                context.ui.callTimeBtnEl = context.platform.document.createElement("button");
-                context.ui.callTimeBtnEl.id = "callTimeBtn";
-                context.ui.callTimeBtnEl.type = "button";
-                context.ui.callTimeBtnEl.className = "secondary-btn";
-                context.ui.callTimeBtnEl.textContent = context.services.l("Call Time", "Annoncer la fin du temps");
-                context.ui.timerControlButtonsEl?.parentElement?.appendChild(context.ui.callTimeBtnEl);
-                context.ui.callTimeBtnEl.addEventListener("click", context.services.callTimeForCurrentPhase);
+            if (!context.ui.skipSpeechBtnEl) {
+                context.ui.skipSpeechBtnEl = context.platform.document.createElement("button");
+                context.ui.skipSpeechBtnEl.id = "skipSpeechBtn";
+                context.ui.skipSpeechBtnEl.type = "button";
+                context.ui.skipSpeechBtnEl.className = "secondary-btn";
+                context.ui.skipSpeechBtnEl.textContent = context.services.l("Skip speech", "Passer la lecture");
+                context.ui.timerControlButtonsEl?.parentElement?.appendChild(context.ui.skipSpeechBtnEl);
+                context.ui.skipSpeechBtnEl.addEventListener("click", context.services.skipCurrentSpeech);
             }
-            const timedPhase = context.services.getCurrentPhase();
-            context.ui.callTimeBtnEl.disabled = !context.state.started || context.state.completed || !context.state.phaseReady || !timedPhase?.duration || context.state.interruptedPhaseIds.has(timedPhase.id);
-            context.ui.callTimeBtnEl.textContent = context.services.l("Call Time", "Annoncer la fin du temps");
+            context.ui.skipSpeechBtnEl.textContent = context.services.l("Skip speech", "Passer la lecture");
             ensureSpeechAudioEl();
             context.services.ensureComposerModeIndicatorUi();
             if (!context.ui.stopSpeechBtnEl) {

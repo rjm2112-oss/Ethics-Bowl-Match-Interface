@@ -4,7 +4,7 @@ const harness=require("./helpers/renderer-harness"),catalog=require("../src/shar
 const delivery=require("../src/shared/speech-delivery"),phasesApi=require("../src/shared/match-phases");
 const tick=()=>new Promise(setImmediate);
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
-function fixture({pendingTargetAudio=false,pendingTargetRecognition=false}={}) {
+function fixture({pendingTargetAudio=false,pendingTargetRecognition=false,timingMode=false}={}) {
     const recognition=deferred(),targetAudio=deferred(),targetRecognition=deferred();
     const calls={speech:[],recognition:[],generation:[],played:[]};
     const phases=phasesApi.build({leadByCase:{1:"human",2:"ai"},locale:"en"});
@@ -18,11 +18,11 @@ function fixture({pendingTargetAudio=false,pendingTargetRecognition=false}={}) {
     const audio={currentTime:0,duration:8,ended:false,paused:true,played:{length:1,start:()=>0,end:()=>audio.currentTime},play(){calls.audioPlays=(calls.audioPlays||0)+1;this.paused=false;return Promise.resolve();},pause(){},load(){},removeAttribute(){}};
     state.speechAudioEl=audio;
     const c=harness.load(["prepareWholeSpeechAudioForPhase","enqueuePreparedWholeSpeech","stopSpeechPlayback","getPreparedAiTurnText","generateAiTurnForPhase"],{
-        state,AUDIO_MODELS:catalog.AUDIO_MODELS,AUTO_SPEAK_VOICES:{ai:"shimmer","ai-alt":"alloy"},
+        state,TIMING_TEST_MODE:timingMode,AUDIO_MODELS:catalog.AUDIO_MODELS,AUTO_SPEAK_VOICES:{ai:"shimmer","ai-alt":"alloy"},
         WHOLE_SPEECH_TTS_CONCURRENCY:2,WHOLE_SPEECH_MIN_PLAYBACK_RATE:.924,WHOLE_SPEECH_MAX_PLAYBACK_RATE:1.09,TIMED_SPEECH_TIMER_LEAD_MS:350,
         hasCredential:()=>true,callAI:async request=>{calls.generation.push(request);return Array(request.recordContext.wordTarget).fill("Selected").join(" ");},
         maybeCompletePreparedAiConferral(){},ensureSpeechAudioEl:()=>audio,refreshSpeechUi(){},clearTimingTestAudioCache(){},resetSpeechProgressState(){},
-        ensureSpeechUi(){},beginSpeechProgressForQueueEntry(){},queueSpeechFollowScroll(){},syncSpeechProgressToUi(){},renderTranscript(){},finishSpeechProgressPlayback(){},invokeSpeechStartCallbacks(){},restoreMessageBodyPlainText(){},waitMs:async()=>{},
+        ensureSpeechUi(){},renderTimingTestResults(){},beginSpeechProgressForQueueEntry(){},queueSpeechFollowScroll(){},syncSpeechProgressToUi(){},renderTranscript(){},finishSpeechProgressPlayback(){},invokeSpeechStartCallbacks(){},restoreMessageBodyPlainText(){},waitMs:async()=>{},
         setBusy(){},setStatus(){},refreshControls(){},updateComposerModeIndicator(){},appendParticipantMessage:(...args)=>calls.played.push(args),console:{info(){},warn(){},error(){}},
         window:{AudioContext:class {},ethicsApi:{audio:{
             speech:async request=>{calls.speech.push(request);return request.recordContext.phaseId===target.id&&pendingTargetAudio?targetAudio.promise:{bytes:[1,2],mimeType:"audio/mpeg"};},
@@ -90,15 +90,22 @@ test("replaced audio cannot publish a stale source prediction",async()=>{
     assert.notEqual(f.state.speechContextPredictions.get(f.source.id)?.text,"Actual recognized source.");await f.stop("reset");
 });
 
-test("queued audio retained across timeout accepts late recognition with its new playback token",async()=>{
-    const f=fixture({pendingTargetRecognition:true});await f.prepare();await f.recognize();const next=await f.targetReady();
+for (const timingMode of [false,true]) test(`queued audio survives timeout and requires real playback and recognition (timing mode ${timingMode})`,async()=>{
+    const f=fixture({pendingTargetRecognition:true,timingMode});await f.prepare();await f.recognize();const next=await f.targetReady();
     await f.stop("timeout");f.state.currentPhaseIndex=f.state.phases.indexOf(f.target);f.state.participantTypes.human="human";
     const text=f.c.getPreparedAiTurnText(f.target.id),message={kind:"ai",label:"Opus",caseNum:1,phaseId:f.target.id};
     delivery.attach(message,text,next.entries.map(entry=>entry.text));f.state.transcript.push(message);
     f.c.enqueuePreparedWholeSpeech("ai",text,f.state.transcript.length-1,"ai",{speechStartLeadMs:350},f.target);
     await tick();await tick();assert.equal(next.consumed,true);assert.equal(next.speechToken,f.state.speechToken);assert.equal(f.calls.audioPlays,1);
+    assert.equal(message.speechDeliveryState,"pending");assert.equal(message.text,"");
     f.targetRecognition.resolve({transcriptText:"Recognized prepared response.",alignment:null});await next.predictionPromise;
     f.audio.currentTime=8;f.audio.ended=true;f.audio.onended();await tick();await tick();
     assert.equal(message.speechDeliveryState,"complete");assert.equal(message.text,"Recognized prepared response.");
     assert.equal(f.calls.speech.length,2);assert.equal(f.calls.recognition.length,2);assert.equal(f.calls.generation.length,1);await f.stop("reset");
+});
+
+test("timing mode speaks moderator announcements and judge questions through the normal queue",()=>{
+    const c=harness.load(["shouldAutoSpeakMessage"],{TIMING_TEST_MODE:true,AUTO_SPEAK_MESSAGE_KINDS:new Set(["moderator","judge","ai","ai-alt"])});
+    for(const kind of ["moderator","judge","ai","ai-alt"])assert.equal(c.shouldAutoSpeakMessage(kind,"A spoken message."),true);
+    assert.equal(c.shouldAutoSpeakMessage("moderator","A silent message.",{silent:true}),false);
 });

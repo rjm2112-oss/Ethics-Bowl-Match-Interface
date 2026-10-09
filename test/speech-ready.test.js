@@ -56,6 +56,20 @@ test("recognition failure rejects completion and cannot release generated text a
     assert.equal(message.text,"");assert.equal(message.speechDeliveryState,"pending");assert.equal(contextPolicy.isReady([message]),false);
 });
 
+test("moderator speech uses real recognition for word highlighting without rewriting its announcement",async()=>{
+    const f=fixture(),text="The presentation begins now.",message={kind:"moderator",text,speechDeliveryState:"complete"};
+    delivery.attach(message,text,[text],"en",{displayOnly:true});f.state.transcript=[message];
+    const prepared=await f.c.fetchOpenAiSpeechAudio({kind:"moderator",voiceKey:"moderator",text,transcriptIndex:0,chunkIndex:0,chunkCount:1,phaseId:f.phase.id},f.state.speechToken);
+    assert.equal(f.calls.recognition,1);assert.equal(f.calls.speech,1);
+    const playback=f.c.playPreparedOpenAiSpeechChunk(prepared,f.state.speechToken);await new Promise(setImmediate);
+    f.recognition.resolve({transcriptText:"The presentation begins now.",alignment:require("../src/shared/word-alignment").alignRecognized(text,[{word:"The",start:0,end:.4},{word:"presentation",start:.4,end:.9},{word:"begins",start:.9,end:1.4},{word:"now",start:1.4,end:1.9}],2)});
+    await new Promise(setImmediate);f.audio.currentTime=.5;f.audio.ontimeupdate();
+    const range=delivery.previewHighlightRange(message,0,f.audio);
+    assert.equal(text.slice(range.startChar,range.endChar),"presentation");assert.equal(message.text,text);assert.equal(message.speechDeliveryState,"complete");
+    f.audio.currentTime=2;f.audio.ended=true;f.audio.onended();await playback;
+    assert.equal(message.text,text);assert.equal(delivery.previewText(message),null);assert.equal(delivery.isPreviewOnly(message),true);
+});
+
 test("late full-audio recognition cannot replace the finalized interrupted prefix",async()=>{
     const f=fixture(),{prepared,message}=await ready(f);
     const playback=f.c.playPreparedOpenAiSpeechChunk(prepared,f.state.speechToken);await new Promise(setImmediate);

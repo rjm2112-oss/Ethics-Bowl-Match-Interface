@@ -77,13 +77,13 @@ test("a replaced request's failure cannot replace a newer scoring error/result",
     assert.equal(f.state.aiFinalJudgeScoringErrors[1],undefined);
     f.pending[1].resolve({humanScore:41,aiScore:42});await fresh;
 });
-test("only the final actual chunk marks speech complete; simulated playback never does",()=>{
-    for(const simulated of [false,true]){
+test("chunk callbacks alone cannot certify delivery, including in timing mode",()=>{
+    for(const timingMode of [false,true]){
         const state={transcript:[{speechDeliveryState:"pending"}],speechChunkCounts:new Map([[0,2]])};let completed=0;
         state.speechCompletionCallbacks=new Map([[0,[()=>completed++]]]);
-        const c=load(["markSpeechChunkComplete"],{window:{setTimeout:callback=>callback()},state,SPEECH_DELIVERY:require("../src/shared/speech-delivery"),TIMING_TEST_MODE:simulated,invokeSpeechCompletionCallbacks:()=>completed++});
+        const c=load(["markSpeechChunkComplete"],{window:{setTimeout:callback=>callback()},state,SPEECH_DELIVERY:require("../src/shared/speech-delivery"),TIMING_TEST_MODE:timingMode,invokeSpeechCompletionCallbacks:()=>completed++});
         c.markSpeechChunkComplete(0);assert.equal(state.transcript[0].speechDeliveryState,"pending");assert.equal(completed,0);
-        c.markSpeechChunkComplete(0);assert.equal(state.transcript[0].speechDeliveryState,simulated?"simulated":"unresolved");assert.equal(completed,1);
+        c.markSpeechChunkComplete(0);assert.equal(state.transcript[0].speechDeliveryState,"unresolved");assert.equal(completed,1);
         state.transcript[0].speechDeliveryState="unresolved";c.markSpeechChunkComplete(0);assert.equal(state.transcript[0].speechDeliveryState,"unresolved");
     }
 });
@@ -131,13 +131,6 @@ test("final judges receive an aligned cutoff prefix and never the private genera
     assert.equal(f.requests[0].userPrompt,"Delivered answer.");assert.doesNotMatch(f.requests[0].userPrompt,/UNSPOKEN/);
     f.pending[0].resolve({humanScore:20,aiScore:21});await score;
 });
-test("manual time call invokes the normal expiration path once and uses a zero clock",()=>{
-    const phase={id:"answer",kind:"judgeAnswer",duration:140},state={started:true,completed:false,phaseReady:true,timer:{remaining:20}};
-    let called=0;const display={textContent:"00:20"};
-    const c=load(["callTimeForCurrentPhase"],{state,getCurrentPhase:()=>phase,timerDisplayEl:display,handleTimedPhaseExpiration:received=>{assert.equal(received,phase);called++;state.phaseReady=false;}});
-    assert.equal(c.callTimeForCurrentPhase(),true);assert.equal(state.timer.remaining,0);assert.equal(display.textContent,"00:00");assert.equal(c.callTimeForCurrentPhase(),false);assert.equal(called,1);
-});
-
 
 test("unsupported-schema 400 is not resubmitted unchanged; changed request may retry and successful cards are retained",async()=>{
  const f=scoringFixture();const first=f.context.maybePrepareAiFinalJudgeScorecard(1);f.pending[0].reject(Error("The AI provider rejected the request (HTTP 400): Unsupported schema minimum"));await assert.rejects(first,/HTTP 400/);

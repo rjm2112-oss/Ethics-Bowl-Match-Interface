@@ -238,7 +238,7 @@
 
         function appendParticipantMessage(role, text, options = {}) {
             const kind = messageKindForRole(role);
-            return context.services.appendMessage(kind, speakerName(role), text, { ...options, voiceKey: kind });
+            return context.services.appendMessage(kind, speakerName(role), text, { ...options, voiceKey: kind, participantRole: role });
         }
 
         function refreshParticipantScoreLabels() {

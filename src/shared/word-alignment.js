@@ -118,7 +118,6 @@
     // repeated words are skipped; this never changes recognized delivery text.
     function mapPreviewWords(preview, alignment, locale="en") {
         if(typeof alignment?.text!=="string" || !Array.isArray(alignment.words))return [];
-        const original=Array.from(String(preview).matchAll(/\S+/gu)).filter(token=>clean(token[0]));
         const spoken=alignment.words;
         let previousChar=0,previousStart=0,previousEnd=0;
         for(const word of spoken){
@@ -128,6 +127,27 @@
                 ||word.startSeconds<previousStart||word.endSeconds<previousEnd||word.endSeconds<word.startSeconds)return [];
             previousChar=word.endChar;previousStart=word.startSeconds;previousEnd=word.endSeconds;
         }
+        return mapTextRanges(preview,alignment.text,spoken,locale);
+    }
+    // Text layout has no timestamps and never authorizes speech delivery.
+    function restoreParagraphs(preview,text,locale="en") {
+        if(!String(preview).includes("\n") || !text)return text;
+        const words=Array.from(text.matchAll(/\S+/gu)).filter(token=>clean(token[0]))
+            .map(token=>({startChar:token.index,endChar:token.index+token[0].length}));
+        const mapped=mapTextRanges(preview,text,words,locale),breaks=[];
+        let previousEnd=0;
+        mapped.forEach((range,index)=>{
+            if(!range)return;
+            if(index>0 && /\n/.test(preview.slice(previousEnd,range.startChar)))breaks.push(words[index].startChar);
+            previousEnd=range.endChar;
+        });
+        let result="",start=0;
+        for(const end of breaks){result+=text.slice(start,end).trimEnd()+"\n\n";start=end;}
+        return result+text.slice(start);
+    }
+    function mapTextRanges(preview,text,spoken,locale) {
+        const original=Array.from(String(preview).matchAll(/\S+/gu)).filter(token=>clean(token[0]));
+        const alignment={text};
         const keys=spoken.map(word=>recognizedKey(alignment.text.slice(word.startChar,word.endChar)));
         const originalForms=original.map(token=>forms(token[0],locale));
         const spokenForms=spoken.map(word=>forms(alignment.text.slice(word.startChar,word.endChar),locale));
@@ -195,5 +215,5 @@
         }
         return candidates.map(candidate=>candidate.size===1?[...candidate.values()][0]:null);
     }
-    return Object.freeze({alignRecognized,alignPreviewRecognized,mapPreviewWords});
+    return Object.freeze({alignRecognized,alignPreviewRecognized,mapPreviewWords,restoreParagraphs});
 });

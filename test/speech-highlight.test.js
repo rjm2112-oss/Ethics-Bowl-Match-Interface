@@ -31,6 +31,17 @@ test('recognized words highlight only after actual played endpoints, independent
 test('seeking ahead across an unplayed gap cannot highlight or display future speech',()=>{
  const m=fixture(),a={currentTime:2,played:{length:2,start:i=>i?1.5:0,end:i=>i?2:.5}};delivery.captureProgress(m,0,a);assert.equal(m.text,'Actual');assert.deepEqual(delivery.highlightRange(m,0,a),{startChar:0,endChar:6});
 });
+
+test('moderator preview paints only the current spoken word with the complete announcement visible',()=>{
+ const text='Your presentation begins now.',m={kind:'moderator',label:'Moderator',text,speechDeliveryState:'complete'};
+ delivery.attach(m,text,[text],'en',{displayOnly:true});
+ delivery.registerSpokenTranscript(m,0,{transcriptText:text,alignment:alignRecognized(text,[{word:'Your',start:0,end:.5},{word:'presentation',start:.5,end:1},{word:'begins',start:1,end:1.5},{word:'now',start:1.5,end:2}],2)});
+ const a=audio(.75),r=renderer(m,a);r.c.captureActiveSpeechDelivery();
+ assert.equal(r.body().textContent,text);assert.equal(r.body().querySelector('.speech-speaking').textContent,'presentation');assert.equal(m.text,text);
+ a.currentTime=1.25;a.played=played(1.25);r.c.captureActiveSpeechDelivery();
+ assert.equal(r.body().querySelector('.speech-speaking').textContent,'begins');assert.equal(m.text,text);
+ delivery.endPreview(m);r.render();assert.equal(r.body().querySelector('.speech-speaking'),null);assert.equal(m.text,text);
+});
 test('chunk boundaries map repeated recognized text to the current chunk, never source offsets',()=>{
  const m=fixture('Actual words.',['Private one.','Private two.']),a=audio(1);delivery.captureProgress(m,0,a);delivery.completeChunk(m,0);assert.equal(delivery.highlightRange(m,0,a),null);
  delivery.registerSpokenTranscript(m,1,{transcriptText:'Actual words.',alignment:alignRecognized('Actual words.',[{word:'Actual',start:0,end:.5},{word:'words',start:.5,end:1}],1.1)});

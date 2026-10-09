@@ -26,6 +26,7 @@ test('durable playback manifests distinguish generated, played and stopped prefi
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'ethics-playback-record-'));try{
  const store=createGenerationRecords(root);store.recordPlayback({event:'generated_audio',phaseId:'case1-presentation',originalText:'Alex protects rights. PRIVATE_UNPLAYED_TAIL',naturalDurationSeconds:5});store.recordPlayback({event:'playback_stopped',phaseId:'case1-presentation',mediaTime:2,deliveredPrefix:'Alex protects',deliveryState:'cutoff'});
  const events=fs.readFileSync(path.join(root,'manifest.jsonl'),'utf8').trim().split('\n').map(JSON.parse);assert.equal(events[0].event,'generated_audio');assert.match(events[0].originalText,/PRIVATE_UNPLAYED_TAIL/);assert.equal(events[1].deliveredPrefix,'Alex protects');assert.throws(()=>store.recordPlayback({event:'credential'}),/Unknown/);
+ for(const event of ['playback_skipped','playback_skip_to_limit'])assert.deepEqual(store.recordPlayback({event,mediaTime:2,through:5}),{recorded:true});
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
 

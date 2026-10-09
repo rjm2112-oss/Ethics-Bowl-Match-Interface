@@ -1,5 +1,5 @@
 (function(root,factory){const api=factory();if(typeof module==="object"&&module.exports)module.exports=api;if(root){root.EthicsRenderer=root.EthicsRenderer||{};root.EthicsRenderer["turns"]=api;}})(typeof globalThis==="object"?globalThis:this,function(){"use strict";
-    const dependencies=Object.freeze({"services": ["advancePhase", "appendParticipantMessage", "blockAutoGenerationForPhase", "buildAiDebaterSystemPrompt", "buildAiTurnPrompt", "callAI", "clearPhaseAwaitingPlayback", "countWords", "getCurrentPhase", "getJudgeQuestionForAnswerPhase", "getParticipantModel", "isAiControlledRole", "isCurrentPhaseAwaitingPlayback", "isFrenchLocale", "isSubstantiveTranscriptMessage", "judgeLabel", "l", "maybeCompletePreparedAiConferral", "phasePreloadsAutoSpeechDuringModerator", "phaseSubtypeLabel", "phaseUsesNaturalModeratorHandoff", "prepareWholeSpeechAudioForPhase", "primeWholeSpeechAudioForPhase", "sanitizeText", "setBusy", "setPhaseAwaitingPlayback", "setStatus", "speakerName", "startTimerWithAutoSpeech"], "settings": ["AI_TURN_PROMPTS", "MODEL_CATALOG", "SPEECH_DELIVERY", "PARTICIPANT_SPEECH_HANDOFF_GAP_MS", "TIMED_SPEECH_TIMER_LEAD_MS", "TIMING_TEST_MODE"], "ui": [], "platform": ["console", "window"]});
+    const dependencies=Object.freeze({"services": ["advancePhase", "appendParticipantMessage", "blockAutoGenerationForPhase", "buildAiDebaterSystemPrompt", "buildAiTurnPrompt", "callAI", "clearPhaseAwaitingPlayback", "countWords", "getCurrentPhase", "getJudgeQuestionForAnswerPhase", "getParticipantModel", "isAiControlledRole", "isCurrentPhaseAwaitingPlayback", "isFrenchLocale", "isSubstantiveTranscriptMessage", "judgeLabel", "l", "maybeCompletePreparedAiConferral", "phasePreloadsAutoSpeechDuringModerator", "phaseSubtypeLabel", "phaseUsesNaturalModeratorHandoff", "prepareWholeSpeechAudioForPhase", "primeWholeSpeechAudioForPhase", "sanitizeText", "setBusy", "setPhaseAwaitingPlayback", "setStatus", "speakerName", "startTimerWithAutoSpeech"], "settings": ["AI_TURN_PROMPTS", "MODEL_CATALOG", "SPEECH_DELIVERY", "PARTICIPANT_SPEECH_HANDOFF_GAP_MS", "TIMED_SPEECH_TIMER_LEAD_MS"], "ui": [], "platform": ["console", "window"]});
     function create(context) {
         function getLinkedAiPreparationTarget(phase) {
             if (!phase) return null;
@@ -241,7 +241,7 @@
                     context.services.setStatus(context.services.isFrenchLocale() ? `Le calcul audio de ${speaker} s’est terminé après la fin du caucus.` : `${speaker}'s audio calculation finished after conferral had already ended.`);
                     return false;
                 }
-                if (!context.settings.TIMING_TEST_MODE && !preparedSpeech) {
+                if (!preparedSpeech) {
                     throw new Error(context.services.l("The prepared speech audio could not be measured.", "L’audio préparé de la prise de parole n’a pas pu être mesuré."));
                 }
 

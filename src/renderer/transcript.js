@@ -33,32 +33,30 @@
         const rowBodies = new WeakMap();
         const previewBodies = new WeakMap();
         function displayText(message) {
-            return context.settings.SPEECH_DELIVERY.previewText(message) ?? String(message?.text || "");
+            return context.settings.SPEECH_DELIVERY.previewText(message) ?? context.settings.SPEECH_DELIVERY.displayText(message) ?? String(message?.text || "");
         }
         function paintPreview(body, text, range) {
             let painted=previewBodies.get(body);
             if(!painted || painted.text!==text){
                 body.textContent="";
                 const words=[];let cursor=0;
-                // Format generated emphasis without changing the source offsets
+                // Remove generated markup without changing the source offsets
                 // used by recognized-word highlighting and speech delivery.
-                const emphasis=[],delimiters=new Set();
-                for(const match of text.matchAll(/(?<![\p{L}\p{N}_*\\])(\*{1,2})([^*\s](?:[^*\n]*?[^*\s])?)\1(?![\p{L}\p{N}_*])/gu)){
-                    const size=match[1].length,start=match.index+size,end=match.index+match[0].length-size;
-                    emphasis.push({start,end,kind:size===2?"strong":"em"});
+                const delimiters=new Set();
+                for(const match of text.matchAll(/(?<![\p{L}\p{N}_*\\])(\*{1,2}|_{1,2})([^*_\s](?:[^*_\n]*?[^*_\s])?)\1(?![\p{L}\p{N}_*])/gu)){
+                    const size=match[1].length,end=match.index+match[0].length-size;
                     for(let i=0;i<size;i++){delimiters.add(match.index+i);delimiters.add(end+i);}
                 }
+                for(const match of text.matchAll(/^ {0,3}#{1,6}[ \t]+/gm))for(let i=0;i<match[0].length;i++)delimiters.add(match.index+i);
+                const visible=(start,end)=>text.slice(start,end).split("").filter((_char,index)=>!delimiters.has(start+index)).join("");
                 for(const token of text.matchAll(/\S+/gu)){
-                    if(token.index>cursor)body.appendChild(context.platform.document.createTextNode(text.slice(cursor,token.index)));
+                    if(token.index>cursor)body.appendChild(context.platform.document.createTextNode(visible(cursor,token.index)));
                     const span=context.platform.document.createElement("span");
-                    span.textContent=token[0].split("").filter((_char,index)=>!delimiters.has(token.index+index)).join("");
-                    const format=emphasis.find(part=>token.index<part.end && token.index+token[0].length>part.start);
-                    if(format)span.dataset.emphasis=format.kind;
-                    body.appendChild(span);
-                    words.push({span,start:token.index,end:token.index+token[0].length});
+                    span.textContent=visible(token.index,token.index+token[0].length);
+                    if(span.textContent){body.appendChild(span);words.push({span,start:token.index,end:token.index+token[0].length});}
                     cursor=token.index+token[0].length;
                 }
-                if(cursor<text.length)body.appendChild(context.platform.document.createTextNode(text.slice(cursor)));
+                if(cursor<text.length)body.appendChild(context.platform.document.createTextNode(visible(cursor,text.length)));
                 painted={text,words,active:[]};previewBodies.set(body,painted);
             }
             const active=range ? painted.words.filter(word=>word.start<range.endChar && word.end>range.startChar) : [];
@@ -349,6 +347,7 @@
             row.dataset.messageIndex = String(index);
             const bubble = context.platform.document.createElement("article");
             bubble.className = `bubble ${message.kind}`;
+            if(message.participantRole)bubble.dataset.participantRole=message.participantRole;
             const label = context.platform.document.createElement("div");
             label.className = "bubble-label";
             label.textContent = message.label;
@@ -444,6 +443,7 @@
                 && ["ai", "ai-alt", "judge"].includes(kind);
             context.state.transcript.push({
                 kind,
+                ...(["human","ai"].includes(options.participantRole)?{participantRole:options.participantRole}:{}),
                 ...(kind === "judge-result" ? { scorecard: options.scorecard } : {}),
                 label,
                 text: String(text || ""),
@@ -457,6 +457,7 @@
             });
             const transcriptIndex = context.state.transcript.length - 1;
             if (awaitsDeliveredSpeech) context.settings.SPEECH_DELIVERY.attach(context.state.transcript[transcriptIndex], String(text || ""), context.services.buildSpeechQueueEntries(kind, text, transcriptIndex, voiceKey, options).map(entry => entry.text),context.state.locale);
+            else if(willAutoSpeak && kind==="moderator") context.settings.SPEECH_DELIVERY.attach(context.state.transcript[transcriptIndex],String(text||""),context.services.buildSpeechQueueEntries(kind,text,transcriptIndex,voiceKey,options).map(entry=>entry.text),context.state.locale,{displayOnly:true});
             const onPlaybackStart = typeof options.onPlaybackStart === "function" ? () => { if (runId === context.state.matchRunId && !context.state.sessionClosed) options.onPlaybackStart(); } : null;
             const onPlaybackComplete = typeof options.onPlaybackComplete === "function" ? () => { if (runId === context.state.matchRunId && !context.state.sessionClosed) options.onPlaybackComplete(); } : null;
             if (onPlaybackStart) {
