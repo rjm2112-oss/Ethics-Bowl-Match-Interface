@@ -178,14 +178,18 @@
                     || context.state.currentDeliveryPlayback?.entry.chunkIndex > 0)) return false;
             const target = speaking || body;
             // A moderator highlight can span a whole paragraph. Anchor its first
-            // line instead of repeatedly trying to fit the entire block.
+            // line; participant highlights identify the current spoken word.
             const rect = target.getClientRects?.()[0] || target.getBoundingClientRect();
             const viewport = chat.getBoundingClientRect();
             const height = chat.clientHeight;
             if (!height || !Number.isFinite(rect.top)) return false;
             context.state.speechFollowMessageIndex = context.state.speechProgressMessageIndex;
-            const inset = Math.min(64, height * .12);
-            if (rect.top >= viewport.top + 8 && rect.top < viewport.bottom - inset) return false;
+            const inset = height / 3;
+            // Leave room below the last line so even the end of a speech can
+            // sit two thirds of the way up the reading pane.
+            chat.style?.setProperty("--speech-tail-space", `${Math.ceil(height - inset)}px`);
+            const lineHeight = Math.min(48, Math.max(16, rect.bottom - rect.top));
+            if (Math.abs(rect.top - viewport.top - inset) <= lineHeight / 3) return false;
             const top = Math.max(0, Math.min(chat.scrollHeight - height, chat.scrollTop + rect.top - viewport.top - inset));
             if (Math.abs(top - chat.scrollTop) < 1) return false;
             const reducedMotion = context.platform.window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -372,6 +376,7 @@
                 if (typeof chat.replaceChildren === "function") chat.replaceChildren(context.ui.emptyStateEl);
                 else { chat.innerHTML = ""; chat.appendChild(context.ui.emptyStateEl); }
                 renderedRows.clear();
+                chat.style?.removeProperty("--speech-tail-space");
                 if (context.ui.followSpeechBtnEl) context.ui.followSpeechBtnEl.hidden = true;
                 return;
             }

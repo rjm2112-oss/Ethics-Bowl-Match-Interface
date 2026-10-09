@@ -210,6 +210,7 @@ context.ui.passBtnEl.addEventListener("click", () => context.services.handleHuma
 context.ui.coinHeadsBtnEl.addEventListener("click", () => context.services.handleHumanCoinCall("heads"));
 context.ui.coinTailsBtnEl.addEventListener("click", () => context.services.handleHumanCoinCall("tails"));
 context.ui.followSpeechBtnEl.addEventListener("click", context.services.resumeSpeechFollow);
+window.addEventListener("resize", context.services.resumeSpeechFollow);
 context.ui.chatEl.addEventListener("wheel", context.services.pauseSpeechFollow, { passive: true });
 context.ui.chatEl.addEventListener("touchmove", context.services.pauseSpeechFollow, { passive: true });
 context.ui.chatEl.addEventListener("keydown", event => {

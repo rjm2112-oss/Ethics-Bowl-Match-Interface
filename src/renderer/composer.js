@@ -24,6 +24,7 @@
             const judgePrepKey = phase?.kind === "judgeQuestion" ? context.services.getAiJudgeQuestionPreparationKey(phase.caseNum, phase.judgeNumber) : "";
             return {
                 locale: context.state.locale, phase, started: context.state.started, completed: context.state.completed,
+                liveScreenActive: context.state.liveScreenActive,
                 audioTranscriptPending:!!context.state.spokenAudioTranscriptionPending,audioTranscriptRetry:!!context.state.spokenAudioCutoffRetry,
                 matchRunId: context.state.matchRunId, notice: context.state.composerStatusNotice,
                 phaseReady: context.state.phaseReady, busy: context.state.busy,

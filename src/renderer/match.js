@@ -127,6 +127,11 @@
                 return;
             }
             if (!context.state.started && !context.state.completed) {
+                if (context.state.liveScreenActive) {
+                    context.ui.currentPhaseTitleEl.textContent = context.services.l("Match opening", "Ouverture du match");
+                    context.ui.currentPhaseMetaEl.textContent = context.services.l("The moderator is introducing the match.", "Le modérateur présente le match.");
+                    return;
+                }
                 context.ui.currentPhaseTitleEl.textContent = context.services.l("Setup", "Configuration");
                 context.ui.currentPhaseMetaEl.textContent = context.services.l("Enter two cases and start the match.", "Saisissez deux cas et démarrez le match.");
                 return;
@@ -725,7 +730,7 @@
                 && retry.prepared?.entry?.phaseId === phase?.id && !!phase;
             const generationRetry = automatic && context.state.autoGenerationBlockedPhaseId === phase.id;
             context.ui.nextActionBtnEl.hidden = context.state.sessionClosed || context.state.completed || (!!retry && !transcriptionRetry)
-                || (automatic && !generationRetry && !transcriptionRetry);
+                || !context.state.started || (automatic && !generationRetry && !transcriptionRetry);
             if (transcriptionRetry && context.state.started && !context.state.completed && !context.state.sessionClosed) {
                 context.ui.nextActionBtnEl.hidden = false;
                 context.ui.nextActionBtnEl.textContent = context.services.l("Retry transcription", "Réessayer la transcription");

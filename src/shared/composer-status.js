@@ -27,8 +27,12 @@
         } else if (snapshot.waitingForCoinChoice) {
             key = "coin-choice"; text = t(`${snapshot.coinWinner || actor} must choose Lead or Pass for Case #1.`, `${snapshot.coinWinner || actor} doit choisir Mener ou Passer pour le cas 1.`);
         } else if (!snapshot.started) {
-            key = snapshot.busy ? "setup-busy" : "setup";
-            text = snapshot.busy ? t("Preparing the match. Input is inactive.", "Préparation du match. La saisie est inactive.") : t("Set up and start a match to activate input.", "Configurez et démarrez un match pour activer la saisie.");
+            if (snapshot.liveScreenActive) {
+                key = "opening"; text = t("The moderator is introducing the match.", "Le modérateur présente le match.");
+            } else {
+                key = snapshot.busy ? "setup-busy" : "setup";
+                text = snapshot.busy ? t("Preparing the match. Input is inactive.", "Préparation du match. La saisie est inactive.") : t("Set up and start a match to activate input.", "Configurez et démarrez un match pour activer la saisie.");
+            }
         } else if (!phase) {
             key = "no-phase"; text = t("Waiting for the next phase. Input is inactive.", "En attente de la prochaine phase. La saisie est inactive.");
         } else if (snapshot.isRecording) {

@@ -128,7 +128,7 @@ test("queued announcements do not scroll past the moderator who is still speakin
     assert.match(chat.children[0].textContent, /Current announcement/);
 });
 
-test("speech following advances by a viewport section and leaves visible words stationary", () => {
+test("speech following clamps its reading position and respects manual scrolling", () => {
     const { c, state, chat } = fixture();
     c.appendMessage("moderator", "Moderator", "Long case. ".repeat(250));
     state.speechProcessing = true;
