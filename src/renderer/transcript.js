@@ -30,8 +30,29 @@
     function create(context) {
         const renderedRows = new Map();
         const rowBodies = new WeakMap();
+        const previewBodies = new WeakMap();
         function displayText(message) {
             return context.settings.SPEECH_DELIVERY.previewText(message) ?? String(message?.text || "");
+        }
+        function paintPreview(body, text, range) {
+            let painted=previewBodies.get(body);
+            if(!painted || painted.text!==text){
+                body.textContent="";
+                const words=[];let cursor=0;
+                for(const token of text.matchAll(/\S+/gu)){
+                    if(token.index>cursor)body.appendChild(context.platform.document.createTextNode(text.slice(cursor,token.index)));
+                    const span=context.platform.document.createElement("span");
+                    span.textContent=token[0];body.appendChild(span);
+                    words.push({span,start:token.index,end:token.index+token[0].length});
+                    cursor=token.index+token[0].length;
+                }
+                if(cursor<text.length)body.appendChild(context.platform.document.createTextNode(text.slice(cursor)));
+                painted={text,words,active:[]};previewBodies.set(body,painted);
+            }
+            const active=range ? painted.words.filter(word=>word.start<range.endChar && word.end>range.startChar) : [];
+            for(const word of painted.active)if(!active.includes(word))word.span.className="";
+            for(const word of active)if(!painted.active.includes(word))word.span.className="speech-speaking";
+            painted.active=active;
         }
 
         function getMostRecentReadableTranscriptIndex() {
@@ -45,6 +66,8 @@
             const body = context.services.getMessageBodyEl(index);
             if (!body) return;
             const text = displayText(context.state.transcript[index]);
+            if(context.settings.SPEECH_DELIVERY.previewText(context.state.transcript[index])!==null){paintPreview(body,text,null);return;}
+            previewBodies.delete(body);
             if (body.textContent !== text || body.querySelector(".speech-speaking")) body.textContent = text;
         }
 
@@ -88,10 +111,16 @@
         function renderSpeechProgressOnBody(body, index) {
             const message = context.state.transcript[index];
             const rawText = String(message?.text || "");
-            // Generated preview and recognized timestamps may describe different
-            // words. Keep the preview readable and stable; never apply ASR offsets.
             if (context.settings.SPEECH_DELIVERY.has(message)) {
                 const text = displayText(message);
+                const active=context.state.currentDeliveryPlayback;
+                if(context.settings.SPEECH_DELIVERY.previewText(message)!==null){
+                    const range=active?.message===message && active.entry?.transcriptIndex===index
+                        && active.token===context.state.speechToken && active.runId===context.state.matchRunId && !context.state.sessionClosed
+                        ? context.settings.SPEECH_DELIVERY.previewHighlightRange(message,active.entry.chunkIndex,active.audio) : null;
+                    paintPreview(body,text,range);return;
+                }
+                previewBodies.delete(body);
                 if (body.textContent !== text || body.querySelector(".speech-speaking")) body.textContent = text;
                 return;
             }
@@ -267,7 +296,7 @@
             body.className = "bubble-body";
             rowBodies.set(row, body);
             if (message.kind === "judge-result" && message.scorecard) renderJudgeScorecardBody(body, message.scorecard);
-            else if (index === context.state.speechProgressMessageIndex) renderSpeechProgressOnBody(body, index);
+            else if (context.settings.SPEECH_DELIVERY.has(message) || index === context.state.speechProgressMessageIndex) renderSpeechProgressOnBody(body, index);
             else body.textContent = displayText(message) || (message.speechDeliveryState === "pending" ? context.services.l("Awaiting confirmed speech…", "En attente de parole confirmée…") : "");
 
             if (message.speechDeliveryState === "unresolved") {
@@ -365,7 +394,7 @@
                                       hiddenUntilPhaseReady: options.hiddenUntilPhaseReady === true
             });
             const transcriptIndex = context.state.transcript.length - 1;
-            if (awaitsDeliveredSpeech) context.settings.SPEECH_DELIVERY.attach(context.state.transcript[transcriptIndex], String(text || ""), context.services.buildSpeechQueueEntries(kind, text, transcriptIndex, voiceKey, options).map(entry => entry.text));
+            if (awaitsDeliveredSpeech) context.settings.SPEECH_DELIVERY.attach(context.state.transcript[transcriptIndex], String(text || ""), context.services.buildSpeechQueueEntries(kind, text, transcriptIndex, voiceKey, options).map(entry => entry.text),context.state.locale);
             const onPlaybackStart = typeof options.onPlaybackStart === "function" ? () => { if (runId === context.state.matchRunId && !context.state.sessionClosed) options.onPlaybackStart(); } : null;
             const onPlaybackComplete = typeof options.onPlaybackComplete === "function" ? () => { if (runId === context.state.matchRunId && !context.state.sessionClosed) options.onPlaybackComplete(); } : null;
             if (onPlaybackStart) {

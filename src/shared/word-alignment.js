@@ -99,5 +99,101 @@
         if(cursor!==words.length||!result.length)throw new Error("Speech recognition contains unmatched words.");
         return {method:"whisper-1-estimated-word-timestamps",text:String(text),durationSeconds,words:result,conservativeGroups};
     }
-    return Object.freeze({alignRecognized});
+    // Display-only recovery from returned ASR anchors. Invalid or uncertain
+    // intervals are omitted, never interpolated or used for delivered text.
+    function alignPreviewRecognized(words, durationSeconds) {
+        if(!Array.isArray(words)||!Number.isFinite(durationSeconds)||durationSeconds<=0)return null;
+        const retained=[];let text="",previousStart=0,previousEnd=0;
+        for(const item of words){
+            if(typeof item?.word!=="string"||!recognizedKey(item.word)||!Number.isFinite(item.start)||!Number.isFinite(item.end)
+                ||item.start<0||item.end<=item.start||item.start<previousStart||item.end<previousEnd||item.end>durationSeconds+.05)continue;
+            const token=item.word.trim();if(!token)continue;
+            if(text)text+=" ";const startChar=text.length;text+=token;
+            retained.push({startChar,endChar:text.length,startSeconds:item.start,endSeconds:item.end});
+            previousStart=item.start;previousEnd=item.end;
+        }
+        return retained.length?{method:"validated-asr-preview-anchors",text,durationSeconds,words:retained}:null;
+    }
+    // Display-only mapping. Insertions/substitutions stay unmapped and ambiguous
+    // repeated words are skipped; this never changes recognized delivery text.
+    function mapPreviewWords(preview, alignment, locale="en") {
+        if(typeof alignment?.text!=="string" || !Array.isArray(alignment.words))return [];
+        const original=Array.from(String(preview).matchAll(/\S+/gu)).filter(token=>clean(token[0]));
+        const spoken=alignment.words;
+        let previousChar=0,previousStart=0,previousEnd=0;
+        for(const word of spoken){
+            if(!Number.isInteger(word.startChar)||!Number.isInteger(word.endChar)||word.startChar<previousChar
+                ||word.endChar<=word.startChar||word.endChar>alignment.text.length
+                ||!Number.isFinite(word.startSeconds)||!Number.isFinite(word.endSeconds)
+                ||word.startSeconds<previousStart||word.endSeconds<previousEnd||word.endSeconds<word.startSeconds)return [];
+            previousChar=word.endChar;previousStart=word.startSeconds;previousEnd=word.endSeconds;
+        }
+        const keys=spoken.map(word=>recognizedKey(alignment.text.slice(word.startChar,word.endChar)));
+        const originalForms=original.map(token=>forms(token[0],locale));
+        const spokenForms=spoken.map(word=>forms(alignment.text.slice(word.startChar,word.endChar),locale));
+        const expandable=raw=>/['’\-–—\d]/u.test(raw)||clean(raw)==="humanlike";
+        const matches=(i,j)=>{
+            const found=[];let key="";
+            for(let count=1;count<=Math.min(expandable(original[i][0])?16:1,spoken.length-j);count++){
+                key+=keys[j+count-1];
+                if(originalForms[i].has(key))found.push({originalCount:1,spokenCount:count});
+            }
+            if(expandable(alignment.text.slice(spoken[j].startChar,spoken[j].endChar))){
+                key=clean(original[i][0]);
+                for(let count=2;count<=Math.min(16,original.length-i);count++){
+                    key+=clean(original[i+count-1][0]);
+                    if(spokenForms[j].has(key))found.push({originalCount:count,spokenCount:1});
+                }
+            }
+            return found;
+        };
+        const rows=original.length+1,cols=spoken.length+1,size=rows*cols;
+        if(!original.length||!spoken.length||size>4000000)return [];
+        // Most TTS/ASR pairs differ only in typography or contractions. Exact
+        // monotone coverage avoids the edit-distance work on this common path.
+        const exact=[];let originalCursor=0,spokenCursor=0;
+        while(originalCursor<original.length && spokenCursor<spoken.length){
+            const choices=matches(originalCursor,spokenCursor);
+            if(choices.length!==1)break;
+            const match=choices[0],last=original[originalCursor+match.originalCount-1];
+            const range={startChar:original[originalCursor].index,endChar:last.index+last[0].length};
+            for(let n=0;n<match.spokenCount;n++)exact.push(range);
+            originalCursor+=match.originalCount;spokenCursor+=match.spokenCount;
+        }
+        if(originalCursor===original.length && spokenCursor===spoken.length)return exact;
+        const forward=new Uint32Array(size).fill(0xFFFFFFFF),backward=new Uint32Array(size).fill(0xFFFFFFFF);
+        const at=(i,j)=>i*cols+j;
+        forward[0]=0;
+        for(let i=0;i<rows;i++)for(let j=0;j<cols;j++){
+            const cost=forward[at(i,j)];
+            if(i<original.length)forward[at(i+1,j)]=Math.min(forward[at(i+1,j)],cost+1);
+            if(j<spoken.length)forward[at(i,j+1)]=Math.min(forward[at(i,j+1)],cost+1);
+            if(i<original.length&&j<spoken.length)for(const match of matches(i,j)){
+                const next=at(i+match.originalCount,j+match.spokenCount);
+                forward[next]=Math.min(forward[next],cost);
+            }
+        }
+        backward[size-1]=0;
+        for(let i=rows-1;i>=0;i--)for(let j=cols-1;j>=0;j--){
+            if(i<original.length)backward[at(i,j)]=Math.min(backward[at(i,j)],1+backward[at(i+1,j)]);
+            if(j<spoken.length)backward[at(i,j)]=Math.min(backward[at(i,j)],1+backward[at(i,j+1)]);
+            if(i<original.length&&j<spoken.length)for(const match of matches(i,j)){
+                backward[at(i,j)]=Math.min(backward[at(i,j)],backward[at(i+match.originalCount,j+match.spokenCount)]);
+            }
+        }
+        const best=forward[size-1],candidates=spoken.map(()=>new Map());
+        for(let i=0;i<rows;i++)for(let j=0;j<spoken.length;j++){
+            const cost=forward[at(i,j)];
+            if(cost+1+backward[at(i,j+1)]===best)candidates[j].set("unmatched",null);
+            if(i===original.length)continue;
+            for(const match of matches(i,j)){
+                if(cost+backward[at(i+match.originalCount,j+match.spokenCount)]!==best)continue;
+                const startChar=original[i].index,last=original[i+match.originalCount-1];
+                const range={startChar,endChar:last.index+last[0].length};
+                for(let n=j;n<j+match.spokenCount;n++)candidates[n].set(`${range.startChar}:${range.endChar}`,range);
+            }
+        }
+        return candidates.map(candidate=>candidate.size===1?[...candidate.values()][0]:null);
+    }
+    return Object.freeze({alignRecognized,alignPreviewRecognized,mapPreviewWords});
 });

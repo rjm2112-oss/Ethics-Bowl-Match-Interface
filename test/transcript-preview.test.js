@@ -111,3 +111,20 @@ test("synthesis and delivery share participant chunk boundaries and bounded exac
     assert.equal(delivery.previewText(message), null);
     assert.ok(c.buildSpeechQueueEntries("moderator", short).every(entry => entry.text.length <= 800));
 });
+
+test("late recognition paints the current preview word with stable spans and no scroll, then clears on cutoff", () => {
+    const { c, state, chat, scrollAnimations } = fixture();
+    const text="Actual words only.\n\n"+"The complete preview stays readable. ".repeat(30).trim();
+    c.appendMessage("ai","Alex",text);
+    const message=state.transcript[0],body=chat.children[0].querySelector(".bubble-body"),nodes=[...body.children],writes=body.textWrites;
+    const audio={currentTime:.25,played:{length:1,start:()=>0,end:()=>audio.currentTime}};
+    state.currentDeliveryPlayback={message,entry:{transcriptIndex:0,chunkIndex:0},audio,token:state.speechToken,runId:state.matchRunId};
+    chat.scrollTop=125;c.captureActiveSpeechDelivery();assert.equal(body.querySelector(".speech-speaking"),null);
+    delivery.registerSpokenTranscript(message,0,{transcriptText:"Actual words only.",alignment:alignRecognized("Actual words only.",[{word:"Actual",start:0,end:.5},{word:"words",start:.5,end:1},{word:"only",start:1,end:1.5}],2)});
+    c.captureActiveSpeechDelivery();assert.equal(body.querySelector(".speech-speaking").textContent,"Actual");assert.equal(message.text,"");
+    audio.currentTime=.75;c.captureActiveSpeechDelivery();assert.equal(body.querySelector(".speech-speaking").textContent,"words");assert.equal(message.text,"Actual");
+    assert.equal(body.textContent,text);assert.deepEqual(body.children,nodes);assert.equal(body.textWrites,writes);assert.equal(chat.scrollTop,125);assert.equal(scrollAnimations(),0);
+    state.matchRunId++;c.renderTranscript();assert.equal(body.querySelector(".speech-speaking"),null);
+    delivery.beginSpokenCutoff(message);delivery.finalizeSpokenCutoff(message,"Actually heard.");c.renderTranscript();
+    assert.equal(body.querySelector(".speech-speaking"),null);assert.equal(body.textContent,"Actually heard.");assert.equal(chat.scrollTop,125);
+});

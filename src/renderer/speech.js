@@ -699,14 +699,16 @@
             const active = context.state.currentDeliveryPlayback;
             if (!active || active.token !== context.state.speechToken || active.runId !== context.state.matchRunId || context.state.sessionClosed) return;
             const changed = context.settings.SPEECH_DELIVERY.captureProgress(active.message,active.entry.chunkIndex,active.audio);
-            const range = context.settings.SPEECH_DELIVERY.highlightRange(active.message,active.entry.chunkIndex,active.audio);
+            const preview = context.settings.SPEECH_DELIVERY.previewText(active.message);
+            const range = preview !== null ? context.settings.SPEECH_DELIVERY.previewHighlightRange(active.message,active.entry.chunkIndex,active.audio)
+                : context.settings.SPEECH_DELIVERY.highlightRange(active.message,active.entry.chunkIndex,active.audio);
             const previousIndex = context.state.speechProgressMessageIndex;
-            context.state.speechProgressMessageIndex = range ? active.entry.transcriptIndex : -1;
+            context.state.speechProgressMessageIndex = range || preview !== null ? active.entry.transcriptIndex : -1;
             context.state.speechProgressReadTo = range?.startChar || 0;
             context.state.speechProgressSpeakStart = range?.startChar || 0;
             context.state.speechProgressSpeakEnd = range?.endChar || 0;
             if (changed) context.services.renderTranscript();
-            else if (range) context.services.syncSpeechProgressToUi(false);
+            else if (range || preview !== null) context.services.syncSpeechProgressToUi(false);
             if (previousIndex >= 0 && previousIndex !== context.state.speechProgressMessageIndex) context.services.restoreMessageBodyPlainText(previousIndex);
         }
 

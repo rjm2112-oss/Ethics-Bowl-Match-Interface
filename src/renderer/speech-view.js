@@ -24,10 +24,28 @@
         }
 
 
+        function isParticipantSpeechProtected() {
+            return context.state.transcript.some(message => ["ai", "ai-alt"].includes(message.kind)
+                && message.substantive !== false && message.speechDeliveryState === "pending");
+        }
+
+
+        function stopSpeechFromControl() {
+            // Check again at activation so a queued click cannot interrupt a
+            // participant that started after the button was last refreshed.
+            if (isParticipantSpeechProtected() || !isSpeechPlaybackActive()) return false;
+            context.services.stopSpeechPlayback(true);
+            return true;
+        }
+
+
         function refreshSpeechUi() {
             if (!context.ui.stopSpeechBtnEl) return;
-            context.ui.stopSpeechBtnEl.disabled = !isSpeechPlaybackActive();
+            const protectedSpeech = isParticipantSpeechProtected();
+            context.ui.stopSpeechBtnEl.disabled = protectedSpeech || !isSpeechPlaybackActive();
             context.ui.stopSpeechBtnEl.textContent = context.services.l("Stop Reading", "Arrêter la lecture");
+            context.ui.stopSpeechBtnEl.title = protectedSpeech
+                ? context.services.l("Participant speeches continue until they finish or time is called.", "Les interventions continuent jusqu’à leur fin ou à l’annonce de la fin du temps.") : "";
             const audio = context.state.speechAudioEl;
             if (audio && audio.dataset.composerStatusBound !== "1") {
                 audio.dataset.composerStatusBound = "1";
@@ -63,11 +81,11 @@
                     const host = context.ui.composerFormEl?.querySelector(".composer-row") || context.ui.nextActionBtnEl?.parentElement || context.ui.composerFormEl;
                     if (host) host.appendChild(context.ui.stopSpeechBtnEl);
                 }
-                context.ui.stopSpeechBtnEl.addEventListener("click", () => { context.services.stopSpeechPlayback(true); });
+                context.ui.stopSpeechBtnEl.addEventListener("click", stopSpeechFromControl);
             }
             refreshSpeechUi();
         }
-        return Object.freeze({ensureSpeechAudioEl,isSpeechPlaybackActive,refreshSpeechUi,ensureSpeechUi});
+        return Object.freeze({ensureSpeechAudioEl,isSpeechPlaybackActive,isParticipantSpeechProtected,stopSpeechFromControl,refreshSpeechUi,ensureSpeechUi});
     }
     return Object.freeze({create,dependencies});
 });

@@ -1,16 +1,22 @@
 (function expose(root, factory) {
-    const value = factory();
+    const value = factory(typeof module === "object" && module.exports ? require("./word-alignment") : root.EthicsWordAlignment);
     if (typeof module === "object" && module.exports) module.exports = value;
     if (root) root.EthicsSpeechDelivery = value;
-})(typeof globalThis === "object" ? globalThis : this, function () {
+})(typeof globalThis === "object" ? globalThis : this, function (wordAlignment) {
     "use strict";
     const sources=new WeakMap();
     const normalize=text=>String(text||"").replace(/\s+/g," ").trim();
-    function attach(message,originalText,chunks) {
+    function attach(message,originalText,chunks,locale="en") {
         if(!message || sources.has(message))throw Error("Speech delivery is already attached or invalid.");
         const parts=chunks.map(normalize),normalized=normalize(originalText);
         if(!parts.length || parts.some(part=>!part) || parts.join(" ")!==normalized)throw Error("Speech chunks do not exactly cover the original text.");
-        sources.set(message,{normalized,preview:String(originalText||""),wordCount:normalized.split(" ").length,parts,recognized:[],completed:[],next:0,closed:false});
+        const preview=String(originalText||""),normToRaw=[];let cursor=0;
+        for(const token of preview.matchAll(/\S+/gu)){
+            if(cursor)normToRaw[cursor++]=token.index;
+            for(let char=0;char<token[0].length;char++)normToRaw[cursor++]=token.index+char;
+        }
+        let offset=0;const chunkOffsets=parts.map(part=>{const start=offset;offset+=part.length+1;return start;});
+        sources.set(message,{normalized,preview,locale,normToRaw,chunkOffsets,wordCount:normalized.split(" ").length,parts,recognized:[],completed:[],next:0,closed:false});
         message.text="";message.speechDeliveryState="pending";
     }
     function has(message){return sources.has(message);}
@@ -23,7 +29,9 @@
         if(!source || source.closed || !Number.isInteger(index) || index<source.next || index>=source.parts.length || typeof transcript?.transcriptText!=="string" || !transcript.transcriptText.trim())throw Error("The played audio needs a valid speech transcript.");
         const text=transcript.transcriptText.trim(),alignment=transcript.alignment||null;
         if(alignment && (alignment.text!==text || !Array.isArray(alignment.words)))throw Error("Word timestamps must describe the recognized speech.");
-        source.recognized[index]={text,alignment};
+        const previewAlignment=transcript.previewAlignment||alignment,previous=source.recognized[index];
+        const previewMap=previous?.previewAlignment===previewAlignment ? previous.previewMap : wordAlignment.mapPreviewWords(source.parts[index],previewAlignment,source.locale);
+        source.recognized[index]={text,alignment,previewAlignment,previewMap};
     }
     function completeChunk(message,index) {
         const source=sources.get(message);
@@ -97,6 +105,23 @@
         if(!word || word.requiresFullPlayback || word.endChar>progress.last.endChar)return null;
         return {startChar:progress.offset+word.startChar,endChar:progress.offset+word.endChar};
     }
+    function previewHighlightRange(message,index,audio) {
+        const source=sources.get(message),recognized=source?.recognized[index],alignment=recognized?.previewAlignment;
+        if(!source||source.closed||message.speechDeliveryState!=="pending"||index!==source.next
+            ||!alignment||!recognized.previewMap?.length||audio?.ended
+            ||!Number.isFinite(audio?.currentTime)||audio.currentTime<0)return null;
+        const through=playedThrough(audio),time=audio.currentTime;
+        if(through<=0||time>through+.001)return null;
+        for(let wordIndex=alignment.words.length-1;wordIndex>=0;wordIndex--){
+            const word=alignment.words[wordIndex];
+            if(word.requiresFullPlayback||time<word.startSeconds||time>=word.endSeconds)continue;
+            if(alignment.conservativeGroups?.some(group=>wordIndex>=group.firstWordIndex&&wordIndex<=group.lastWordIndex))return null;
+            const mapped=recognized.previewMap[wordIndex];if(!mapped)return null;
+            const start=source.chunkOffsets[index]+mapped.startChar,end=source.chunkOffsets[index]+mapped.endChar;
+            return {startChar:source.normToRaw[start],endChar:source.normToRaw[end-1]+1};
+        }
+        return null;
+    }
     function hasFullPlayback(audio) {return !!audio?.ended && Number.isFinite(audio.duration) && audio.duration>0 && playedThrough(audio)>=audio.duration-.001;}
-    return Object.freeze({attach,has,previewText,matchesSource,wordCount,registerSpokenTranscript,completeChunk,beginSpokenCutoff,finalizeSpokenCutoff,sealUnresolved,playedThrough,captureProgress,highlightRange,hasFullPlayback});
+    return Object.freeze({attach,has,previewText,matchesSource,wordCount,registerSpokenTranscript,completeChunk,beginSpokenCutoff,finalizeSpokenCutoff,sealUnresolved,playedThrough,captureProgress,highlightRange,previewHighlightRange,hasFullPlayback});
 });

@@ -12,7 +12,7 @@ for(const sourceMode of ["ai","human"])test(`${sourceMode} historical dialogue s
  assert.match(summary.textContent,/1.5 votes.*1.5 votes.*tie/);
 });
 test("renderer publishes an empty pending transcript while TTS receives the original private source",()=>{
- const state={transcript:[]},queued=[];const c=harness.load(["appendMessage"],{state,getVoiceKeyForMessage:()=>"ai",shouldAutoSpeakMessage:()=>true,chunkTextForSpeech:()=>["Generated first.","PRIVATE_TAIL"],enqueueTranscriptSpeech:(...args)=>queued.push(args),emptyStateEl:{},chatEl:{innerHTML:"",appendChild(){}},document:{createElement:()=>({className:"",dataset:{},appendChild(){}})},formatBubbleTime:()=>"",getMessageBodyEl:()=>null});
+ const state={transcript:[]},queued=[];const c=harness.load(["appendMessage"],{state,getVoiceKeyForMessage:()=>"ai",shouldAutoSpeakMessage:()=>true,chunkTextForSpeech:()=>["Generated first.","PRIVATE_TAIL"],enqueueTranscriptSpeech:(...args)=>queued.push(args),emptyStateEl:{},chatEl:{innerHTML:"",appendChild(){}},document:{createElement:()=>({className:"",dataset:{},appendChild(){}}),createTextNode:text=>({textContent:text})},formatBubbleTime:()=>"",getMessageBodyEl:()=>null});
  c.appendMessage("ai","Morgan","Generated first. PRIVATE_TAIL",{phaseId:"answer"});assert.equal(state.transcript[0].text,"");assert.equal(state.transcript[0].speechDeliveryState,"pending");assert.doesNotMatch(JSON.stringify(state.transcript),/PRIVATE_TAIL/);assert.equal(queued[0][1],"Generated first. PRIVATE_TAIL");
  delivery.registerSpokenTranscript(state.transcript[0],0,{transcriptText:"Actually heard."});delivery.completeChunk(state.transcript[0],0);delivery.sealUnresolved(state.transcript[0]);assert.equal(state.transcript[0].text,"Actually heard.");
 });

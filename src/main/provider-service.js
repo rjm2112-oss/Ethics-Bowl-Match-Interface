@@ -52,7 +52,8 @@ function createProviderService({ credentialStore, fetchImpl = globalThis.fetch, 
                 const recognition=recordStore?.cachedRecognition(hash)||await openai.transcribe({...request,prompt:"",recordContext:{recognitionHash:hash,speechRecordId:request.recordId,language:request.language,recognitionMode:"no-source-prompt"}},await requireKey("openai"));
                 let alignment=null,timingError=null;
                 try{alignment=WORD_ALIGNMENT.alignRecognized(recognition.text,recognition.words,request.durationSeconds,request.language||"en");}catch(error){timingError=error.message;}
-                return {policy:"spoken-audio",transcriptText:recognition.text,recognitionRecordId:recognition.recordId||null,alignment,timingError,estimatedWordTimestamps:true};
+                const previewAlignment=WORD_ALIGNMENT.alignPreviewRecognized(recognition.words,request.durationSeconds);
+                return {policy:"spoken-audio",transcriptText:recognition.text,recognitionRecordId:recognition.recordId||null,alignment,previewAlignment,timingError,estimatedWordTimestamps:true};
             })();
             recognitions.set(hash,promise);
         }
