@@ -1,5 +1,5 @@
 (function(root,factory){const api=factory();if(typeof module==="object"&&module.exports)module.exports=api;if(root){root.EthicsRenderer=root.EthicsRenderer||{};root.EthicsRenderer["speech"]=api;}})(typeof globalThis==="object"?globalThis:this,function(){"use strict";
-    const dependencies=Object.freeze({"services": ["beginSpeechProgressForQueueEntry", "clearTimingTestAudioCache", "countWords", "ensureSpeechAudioEl", "ensureSpeechUi", "finalizeAllSpeechPlaybackCallbacks", "finalizeSpeechPlaybackForMessage", "finishSpeechProgressPlayback", "formatClock", "formatPreciseDuration", "getCurrentPhase", "getJudgeModel", "getParticipantModel", "getPhaseById", "getTimingTestFastForwardForMessage", "hasCredential", "invokeSpeechStartCallbacks", "isAiControlledRole", "isFrenchLocale", "l", "markSpeechChunkComplete", "messageKindForRole", "normalizeSpeechText", "queueSpeechFollowScroll", "refreshSpeechUi", "renderTimingTestResults", "renderTranscript", "resetSpeechProgressState", "restoreMessageBodyPlainText", "syncSpeechProgressToUi", "revokeTimingTestAudioChunks", "safeBridgeErrorMessage", "sanitizeText", "setStatus", "stopTimer", "trackSpeechChunksForMessage", "updateComposerModeIndicator", "waitMs"], "settings": ["AI_TURN_PROMPTS", "AUDIO_MODELS", "AUTO_SPEAK_MESSAGE_KINDS", "AUTO_SPEAK_VOICES", "MAX_TTS_CHARS", "MODEL_CATALOG", "MODERATOR_SPEECH_INSTRUCTIONS", "SPEECH_CHUNK_MAX", "SPEECH_DELIVERY", "SPEECH_TIMING", "STOP_SPEECH_ERROR", "TIMED_SPEECH_TIMER_LEAD_MS", "TIMING_TEST_MODE", "TIMING_TEST_TTS_CONCURRENCY", "WHOLE_SPEECH_MAX_PLAYBACK_RATE", "WHOLE_SPEECH_MIN_PLAYBACK_RATE", "WHOLE_SPEECH_TTS_CONCURRENCY"], "ui": ["timerDisplayEl", "timerHintEl"], "platform": ["AbortController", "Blob", "URL", "console", "window"]});
+    const dependencies=Object.freeze({"services": ["beginSpeechProgressForQueueEntry", "clearTimingTestAudioCache", "countWords", "ensureSpeechAudioEl", "ensureSpeechUi", "finalizeAllSpeechPlaybackCallbacks", "finalizeSpeechPlaybackForMessage", "finishSpeechProgressPlayback", "formatClock", "formatPreciseDuration", "getCurrentPhase", "getJudgeModel", "getParticipantModel", "getPhaseById", "getTimingTestFastForwardForMessage", "hasCredential", "invokeSpeechStartCallbacks", "isAiControlledRole", "isFrenchLocale", "l", "markSpeechChunkComplete", "messageKindForRole", "normalizeSpeechText", "primeAiPreparationForPhase", "queueSpeechFollowScroll", "refreshSpeechUi", "renderTimingTestResults", "renderTranscript", "resetSpeechProgressState", "restoreMessageBodyPlainText", "syncSpeechProgressToUi", "revokeTimingTestAudioChunks", "safeBridgeErrorMessage", "sanitizeText", "setStatus", "stopTimer", "trackSpeechChunksForMessage", "updateComposerModeIndicator", "waitMs"], "settings": ["AI_TURN_PROMPTS", "AUDIO_MODELS", "AUTO_SPEAK_MESSAGE_KINDS", "AUTO_SPEAK_VOICES", "MAX_TTS_CHARS", "MODEL_CATALOG", "MODERATOR_SPEECH_INSTRUCTIONS", "SPEECH_CHUNK_MAX", "SPEECH_DELIVERY", "SPEECH_TIMING", "STOP_SPEECH_ERROR", "TIMED_SPEECH_TIMER_LEAD_MS", "TIMING_TEST_MODE", "TIMING_TEST_TTS_CONCURRENCY", "WHOLE_SPEECH_MAX_PLAYBACK_RATE", "WHOLE_SPEECH_MIN_PLAYBACK_RATE", "WHOLE_SPEECH_TTS_CONCURRENCY"], "ui": ["timerDisplayEl", "timerHintEl"], "platform": ["AbortController", "Blob", "URL", "console", "window"]});
     function create(context) {
         const participantSpeechInstructions = "Keep one consistent speaker identity, vocal register, pitch range, accent, and natural measured cadence throughout this speech. Use the selected voice without changing character or delivery style between paragraphs. Preserve the supplied wording exactly.";
         function rejectCurrentSpeechPlayback() {
@@ -98,7 +98,10 @@
             revokeQueuedPreparedSpeechAudio();
             context.state.speechQueue = [];
             context.state.wholeSpeechPendingTranscriptIndexes.clear();
-            clearAllWholeSpeechPreparations();
+            const currentPhaseIndex = context.state.phases.findIndex(phase => phase.id === context.services.getCurrentPhase()?.id);
+            const preservePhaseIds = deliveryReason === "timeout" && currentPhaseIndex >= 0
+                ? new Set(context.state.phases.slice(currentPhaseIndex + 1).map(phase => phase.id)) : new Set();
+            clearAllWholeSpeechPreparations({preservePhaseIds});
             context.state.speechProcessing = false;
             clearOpenAiSpeechLookahead();
             context.state.speechPlaybackActive = false;
@@ -315,6 +318,7 @@
 
 
         function clearWholeSpeechPreparation(phaseId) {
+            context.state.speechContextPredictions.delete(phaseId);
             const record = context.state.wholeSpeechPreparations.get(phaseId);
             if (!record) return;
             context.state.wholeSpeechPreparations.delete(phaseId);
@@ -322,10 +326,13 @@
         }
 
 
-        function clearAllWholeSpeechPreparations() {
-            const records = [...context.state.wholeSpeechPreparations.values()];
-            context.state.wholeSpeechPreparations.clear();
-            records.forEach(releaseWholeSpeechPreparation);
+        function clearAllWholeSpeechPreparations({preservePhaseIds = new Set()} = {}) {
+            for (const phaseId of context.state.speechContextPredictions.keys()) {
+                if (!preservePhaseIds.has(phaseId)) context.state.speechContextPredictions.delete(phaseId);
+            }
+            for (const phaseId of context.state.wholeSpeechPreparations.keys()) {
+                if (!preservePhaseIds.has(phaseId)) clearWholeSpeechPreparation(phaseId);
+            }
         }
 
 
@@ -347,6 +354,7 @@
             const record = {
                 phaseId: phase.id,
                 matchRunId,
+                speechToken,
                 text: normalized,
                 kind: descriptor.kind,
                 voiceKey: descriptor.voiceKey,
@@ -359,6 +367,12 @@
                 promise: null
             };
             context.state.wholeSpeechPreparations.set(phase.id, record);
+            // Future speech survives the preceding speaker's normal timeout.
+            // Once consumed, its lifetime follows its own playback token.
+            const isPreparationCurrent = () => !record.released && !context.state.sessionClosed
+                && matchRunId === context.state.matchRunId
+                && (record.consumed ? record.speechToken === context.state.speechToken
+                    : context.state.wholeSpeechPreparations.get(phase.id) === record);
 
             record.promise = (async () => {
                 let results = [];
@@ -371,7 +385,8 @@
                             try {
                                 prepared = await fetchOpenAiSpeechAudio(entry, speechToken, {
                                     controllerKind: "whole-speech-preload",
-                                    trackController: false
+                                    trackController: false,
+                                    isPreparationCurrent
                                 });
                                 if (!prepared) return { entry, cancelled: true };
                                 const decodedTiming = prepared.decodedTiming || await decodeSpeechAudioDuration(prepared.audioBytes, prepared.audioUrl);
@@ -382,9 +397,7 @@
                         }
                     );
 
-                    const isCurrent = context.state.wholeSpeechPreparations.get(phase.id) === record
-                        && matchRunId === context.state.matchRunId
-                        && speechToken === context.state.speechToken;
+                    const isCurrent = isPreparationCurrent();
                     const failed = results.find((result) => result.error);
                     if (!isCurrent || results.some((result) => result.cancelled)) {
                         results.forEach((result) => revokePreparedSpeechAudio(result.prepared));
@@ -414,6 +427,24 @@
                         playbackRate: Number(record.plan.playbackRate.toFixed(4)),
                         projectedClockSeconds: Number(record.plan.projectedTimerConsumedSeconds.toFixed(2))
                     })}`);
+                    // Recognition already runs for playback/highlighting. Reuse
+                    // it asynchronously; early preparation must not delay audio.
+                    record.predictionPromise = Promise.all(results.map(async result => ({
+                        durationSeconds: result.decodedTiming.durationSeconds,
+                        transcript: result.prepared.wordAlignment || await result.prepared.wordAlignmentPromise
+                    }))).then(chunks => {
+                        if (!isPreparationCurrent() || context.state.completed) return null;
+                        const prediction=context.settings.SPEECH_DELIVERY.predictTimedTranscript(chunks,record.plan);
+                        if (!prediction) return null;
+                        context.state.speechContextPredictions.set(phase.id,{
+                            ...prediction, matchRunId, sourceText:normalized, kind:descriptor.kind
+                        });
+                        context.services.primeAiPreparationForPhase(context.services.getCurrentPhase());
+                        return prediction;
+                    }).catch(error => {
+                        context.platform.console.warn("Early speech-context prediction unavailable; waiting for delivery.",error);
+                        return null;
+                    });
                     return record;
                 } catch (error) {
                     results.forEach((result) => revokePreparedSpeechAudio(result.prepared));
@@ -599,9 +630,10 @@
         }
 
 
-        async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct", trackController = true } = {}) {
+        async function fetchOpenAiSpeechAudio(entry, token, { controllerKind = "direct", trackController = true, isPreparationCurrent = null } = {}) {
             const runId = context.state.matchRunId;
-            const isCurrent = () => token === context.state.speechToken && runId === context.state.matchRunId && !context.state.sessionClosed;
+            const isCurrent = () => runId === context.state.matchRunId && !context.state.sessionClosed
+                && (isPreparationCurrent ? isPreparationCurrent() : token === context.state.speechToken);
             if (!isCurrent()) return null;
             if (entry?.preparedAudio?.audioUrl) {
                 const preparedAudio = entry.preparedAudio;
@@ -1087,6 +1119,7 @@
                     context.state.wholeSpeechPreparations.delete(phase.id);
                 }
                 record.consumed = true;
+                record.speechToken = enqueueToken;
                 entries.forEach((entry, index) => {
                     const prepared = record.preparedChunks[index].prepared;
                     entry.playbackRate = plan.playbackRate;

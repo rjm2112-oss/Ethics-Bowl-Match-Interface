@@ -534,7 +534,7 @@
         function cutOffCurrentPhaseReadAloudIfNeeded(phase) {
             if (!shouldCutOffReadAloudOnTimeout(phase)) return;
             if (!context.services.isSpeechPlaybackActive()) return;
-            return context.services.stopSpeechPlayback(false, { resolveCallbacks: false });
+            return context.services.stopSpeechPlayback(false, { resolveCallbacks: false, deliveryReason: "timeout" });
         }
 
         function readCase(caseNum) {

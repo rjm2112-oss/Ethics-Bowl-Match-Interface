@@ -21,11 +21,12 @@
         }
 
 
-        function buildAiTurnPrompt(phase) {
+        function buildAiTurnPrompt(phase, {transcript} = {}) {
+            const discussion = transcript ?? context.services.substantiveTranscriptAsPlainText(phase.caseNum);
             if (phase.kind === "judgeAnswer") return context.settings.AI_TURN_PROMPTS.buildJudgeAnswerPrompt({
                 participantName: context.services.speakerName(phase.speaker), opponentName: context.services.speakerName(context.services.otherRole(phase.speaker)),
                 locale: context.state.locale, duration: phase.duration, caseData: context.state.cases[phase.caseNum],
-                transcript: context.services.substantiveTranscriptAsPlainText(phase.caseNum),
+                transcript: discussion,
                 scoringCriteria: context.settings.ETHICS_BOWL_RUBRIC.buildTurnCriteria({phase,locale:context.state.locale}),
                 additionalInstructions: context.services.getStoredText(context.settings.STORAGE_KEYS.instructions),
                 judgeNumber: phase.judgeNumber, judgeQuestion: context.services.getJudgeQuestionForAnswerPhase(phase)
@@ -34,7 +35,7 @@
                 phase, locale: context.state.locale,
                 caseData: context.state.cases[phase.caseNum],
                 participantRole: phase.speaker === context.state.leadByCase[phase.caseNum] ? "Presenting participant" : "Commenting participant",
-                transcript: context.services.substantiveTranscriptAsPlainText(phase.caseNum),
+                transcript: discussion,
                 judgeQuestion: phase.kind === "judgeAnswer" ? context.services.getJudgeQuestionForAnswerPhase(phase) : "",
                 scoringCriteria: context.settings.ETHICS_BOWL_RUBRIC.buildTurnCriteria({ phase, locale: context.state.locale })
             });

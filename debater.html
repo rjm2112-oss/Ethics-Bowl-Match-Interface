@@ -240,7 +240,7 @@
     <section id="matchScreen" class="screen-view match-screen" hidden><div class="arena-grid live-layout"><header class="match-toolbar"><div class="live-column-brand debate-heading" aria-label="Site branding">
               <img data-logo-slot class="site-logo live-column-logo" alt="Ethics Bowl logo" hidden />
               <div data-logo-fallback class="site-logo-fallback live-column-logo-fallback">Ethics Bowl</div>
-            <h2 data-i18n-en="Live debate" data-i18n-fr="Débat en direct">Live debate</h2></div><div class="progress-header match-phase-header">
+            </div><div class="progress-header match-phase-header">
                 <div class="phase-copy">
                   <div
                     class="panel-kicker"
@@ -318,7 +318,28 @@
               </button>
             </div>
           </form>
-        </main><aside class="right-rail"><div class="timer-panel">
+        </main><aside class="right-rail"><section class="live-summary-side"><div class="progress-card">
+              <div
+                class="panel-kicker"
+                data-i18n-en="Match overview"
+                data-i18n-fr="Vue d’ensemble du match"
+              >
+                Match overview
+              </div>
+              <div id="matchSetupSummary" class="match-summary-grid"></div>
+
+              <div class="button-cluster" style="margin-top: 14px;">
+                <button
+                  id="newMatchBtn"
+                  class="ghost-btn"
+                  type="button"
+                  data-i18n-en="New match"
+                  data-i18n-fr="Nouveau match"
+                >
+                  New match
+                </button>
+              </div>
+            </div></section><div class="timer-panel">
 
               <div id="timerDisplay" class="timer-display">--:--</div>
               <div id="timerHint" class="small-note">No active timed phase yet.</div>
@@ -353,28 +374,7 @@
                 </button>
               </div>
 
-            </div><section class="live-summary-side"><div class="progress-card">
-              <div
-                class="panel-kicker"
-                data-i18n-en="Match overview"
-                data-i18n-fr="Vue d’ensemble du match"
-              >
-                Match overview
-              </div>
-              <div id="matchSetupSummary" class="match-summary-grid"></div>
-
-              <div class="button-cluster" style="margin-top: 14px;">
-                <button
-                  id="newMatchBtn"
-                  class="ghost-btn"
-                  type="button"
-                  data-i18n-en="New match"
-                  data-i18n-fr="Nouveau match"
-                >
-                  New match
-                </button>
-              </div>
-            </div></section><section class="case-reference-side" aria-label="Case reference">
+            </div><section class="case-reference-side" aria-label="Case reference">
             <details id="matchCase1Card" class="match-case-card case-reference-card">
               <summary id="matchCase1Summary">Case #1</summary>
               <div class="match-case-body">

@@ -63,15 +63,10 @@
         }
         return covered;
     }
-    // Read only a verified recognized chunk and media intervals actually played.
-    // Timestamp endpoints are ASR estimates, so only completed words are released.
-    function confirmedProgress(message,index,audio) {
-        const source=sources.get(message),recognized=source?.recognized[index],alignment=recognized?.alignment;
-        if(!source || source.closed || message.speechDeliveryState!=="pending" || index!==source.next
-            || !alignment || alignment.text!==recognized.text || !Array.isArray(alignment.words)
-            || !Number.isFinite(audio?.currentTime) || audio.currentTime<0)return null;
-        const through=Math.min(audio.currentTime,playedThrough(audio));
-        if(!Number.isFinite(through) || through<0)return null;
+    function recognizedProgress(recognized,completed,through) {
+        const alignment=recognized?.alignment;
+        if(!alignment || alignment.text!==recognized.text || !Array.isArray(alignment.words)
+            || !Number.isFinite(through) || through<0)return null;
         let previousChar=0,previousStart=0,previousEnd=0,last=null;
         // Separate monotone starts/ends permit conservative zero-duration groups
         // sharing the next real word's endpoint; they are never interpolated.
@@ -86,8 +81,16 @@
             if(word.requiresFullPlayback || word.endSeconds>through)break;
             last=word;
         }
-        const completed=source.completed.join(" "),prefix=recognized.text.slice(0,last?.endChar||0);
+        const prefix=recognized.text.slice(0,last?.endChar||0);
         return {text:[completed,prefix].filter(Boolean).join(" "),last,offset:completed.length+(completed && prefix?1:0)};
+    }
+    // Read only a verified recognized chunk and media intervals actually played.
+    // Timestamp endpoints are ASR estimates, so only completed words are released.
+    function confirmedProgress(message,index,audio) {
+        const source=sources.get(message);
+        if(!source || source.closed || message.speechDeliveryState!=="pending" || index!==source.next
+            || !Number.isFinite(audio?.currentTime) || audio.currentTime<0)return null;
+        return recognizedProgress(source.recognized[index],source.completed.join(" "),Math.min(audio.currentTime,playedThrough(audio)));
     }
     function captureProgress(message,index,audio) {
         const progress=confirmedProgress(message,index,audio);
@@ -123,5 +126,45 @@
         return null;
     }
     function hasFullPlayback(audio) {return !!audio?.ended && Number.isFinite(audio.duration) && audio.duration>0 && playedThrough(audio)>=audio.duration-.001;}
-    return Object.freeze({attach,has,previewText,matchesSource,wordCount,registerSpokenTranscript,completeChunk,beginSpokenCutoff,finalizeSpokenCutoff,sealUnresolved,playedThrough,captureProgress,highlightRange,previewHighlightRange,hasFullPlayback});
+    // Private preparation only: this does not publish any delivered words. Use
+    // recognized audio, including conservative ASR endpoints, never draft text.
+    function predictTimedTranscript(chunks, plan) {
+        if (!Array.isArray(chunks) || !chunks.length || !plan) return null;
+        const {playbackRate, timerBudgetSeconds, timerLeadSeconds, playbackReserveSeconds} = plan;
+        if (![playbackRate,timerBudgetSeconds,timerLeadSeconds,playbackReserveSeconds].every(Number.isFinite)
+            || playbackRate<=0 || timerBudgetSeconds<=0 || timerLeadSeconds<0 || playbackReserveSeconds<0) return null;
+        if (chunks.some(chunk=>!chunk || !Number.isFinite(chunk.durationSeconds) || chunk.durationSeconds<=0
+            || typeof chunk.transcript?.transcriptText!=="string" || !chunk.transcript.transcriptText.trim())) return null;
+        const parts=chunks.map(chunk=>chunk.transcript.transcriptText.trim());
+        const fullText=parts.join(" ");
+        const cutoffPrediction=prefix=>{
+            if(!prefix) return null;
+            // A slight overestimate is intentional. Keep at most two additional
+            // recognized words, with no rewrite or cutoff-dependent retry.
+            const suffix=fullText.slice(prefix.length);
+            const next=Array.from(suffix.matchAll(/\S+/gu)).slice(0,2);
+            const end=next.length?prefix.length+next.at(-1).index+next.at(-1)[0].length:prefix.length;
+            return Object.freeze({text:fullText.slice(0,end),deliveryState:"cutoff"});
+        };
+        const completed=[];
+        let available=Math.max(0,timerBudgetSeconds-timerLeadSeconds-playbackReserveSeconds)*playbackRate;
+        try {
+            for(let index=0;index<chunks.length;index++) {
+                const chunk=chunks[index];
+                const recognized={text:parts[index],alignment:chunk.transcript.alignment};
+                if(recognized.alignment && (recognized.alignment.text!==recognized.text || !Array.isArray(recognized.alignment.words))) return null;
+                if(available+1e-7>=chunk.durationSeconds) {
+                    completed.push(recognized.text);
+                    available=Math.max(0,available-chunk.durationSeconds);
+                    continue;
+                }
+                if (available<=1e-7) return cutoffPrediction(completed.join(" "));
+                const progress=recognizedProgress(recognized,completed.join(" "),available);
+                if(!progress) return null;
+                return cutoffPrediction(progress.text);
+            }
+            return Object.freeze({text:fullText,deliveryState:"complete"});
+        } catch { return null; }
+    }
+    return Object.freeze({attach,has,previewText,matchesSource,wordCount,registerSpokenTranscript,completeChunk,beginSpokenCutoff,finalizeSpokenCutoff,sealUnresolved,playedThrough,captureProgress,highlightRange,previewHighlightRange,hasFullPlayback,predictTimedTranscript});
 });

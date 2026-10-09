@@ -47,6 +47,8 @@
     aiPreparedTurns: {},
     aiPreparationPromises: {},
     aiPreparationErrors: {},
+    aiPreparationBindings: {},
+    speechContextPredictions: new Map(),
     mainComposerHydratedPhaseId: "",
     timer: {
         intervalId: null,
