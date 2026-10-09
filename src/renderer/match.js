@@ -875,7 +875,7 @@
             refreshNextActionControl(phase, locked, waitingForPlayback);
 
             context.services.updateJudgePanelUi();
-            context.ui.aiJudgePanelEl.hidden = context.ui.judgeModeSelectEl.value !== "ai";
+            context.ui.aiJudgePanelEl.hidden = !context.services.usesAiJudgeQuestions(context.ui.judgeModeSelectEl.value);
             context.ui.humanJudgePanelEl.hidden = context.services.usesAiFinalScoring(context.ui.judgeModeSelectEl.value);
             const hybrid = context.ui.judgeModeSelectEl.value === "hybrid";
             const humanPanelHeading = context.ui.humanJudgePanelEl.querySelector(".judge-copy .status-chip");

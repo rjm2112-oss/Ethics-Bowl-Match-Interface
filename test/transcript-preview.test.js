@@ -94,6 +94,34 @@ test("word updates keep preview nodes and user scroll position stable; only foll
     c.renderTranscript(); assert.equal(chat.scrollTop, 800);
 });
 
+test("emphasis is readable while highlights retain original source offsets", () => {
+    const { c, state, chat } = fixture();
+    const spoken = "A good of its own needs care. Later evidence matters.";
+    const preview = "A **good of its own** needs *care*. Later evidence matters. 2 * 3; **unfinished <img>";
+    c.appendMessage("ai", "Alex", preview);
+    const message = state.transcript[0], body = chat.children[0].querySelector(".bubble-body");
+    assert.equal(body.textContent, spoken + " 2 * 3; **unfinished <img>");
+    assert.equal(delivery.previewText(message), preview);
+    assert.equal(message.text, "");
+    assert.deepEqual(body.children.filter(node => node.dataset?.emphasis === "strong").map(node => node.textContent), ["good", "of", "its", "own"]);
+    assert.deepEqual(body.children.filter(node => node.dataset?.emphasis === "em").map(node => node.textContent), ["care."]);
+    const nodes = [...body.children], writes = body.textWrites, words = spoken.split(" ");
+    delivery.registerSpokenTranscript(message, 0, {
+        transcriptText: spoken,
+        alignment: alignRecognized(spoken, words.map((word, index) => ({ word, start: index * .5, end: (index + 1) * .5 })), 6)
+    });
+    const audio = { currentTime: 0, played: { length: 1, start: () => 0, end: () => audio.currentTime } };
+    state.currentDeliveryPlayback = { message, entry: { transcriptIndex: 0, chunkIndex: 0 }, audio, token: state.speechToken, runId: state.matchRunId };
+    words.forEach((word, index) => {
+        audio.currentTime = index * .5 + .25;
+        c.captureActiveSpeechDelivery();
+        assert.equal(body.querySelector(".speech-speaking")?.textContent, word);
+    });
+    assert.deepEqual(body.children, nodes);
+    assert.equal(body.textWrites, writes);
+    assert.equal(body.children.find(node => node.textContent === "good").dataset.emphasis, "strong");
+});
+
 test("synthesis and delivery share participant chunk boundaries and bounded exact text", () => {
     const { c, state } = fixture();
     const short = "A complete participant answer. ".repeat(50).trim();

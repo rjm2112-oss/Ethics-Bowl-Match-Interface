@@ -40,10 +40,21 @@
             if(!painted || painted.text!==text){
                 body.textContent="";
                 const words=[];let cursor=0;
+                // Format generated emphasis without changing the source offsets
+                // used by recognized-word highlighting and speech delivery.
+                const emphasis=[],delimiters=new Set();
+                for(const match of text.matchAll(/(?<![\p{L}\p{N}_*\\])(\*{1,2})([^*\s](?:[^*\n]*?[^*\s])?)\1(?![\p{L}\p{N}_*])/gu)){
+                    const size=match[1].length,start=match.index+size,end=match.index+match[0].length-size;
+                    emphasis.push({start,end,kind:size===2?"strong":"em"});
+                    for(let i=0;i<size;i++){delimiters.add(match.index+i);delimiters.add(end+i);}
+                }
                 for(const token of text.matchAll(/\S+/gu)){
                     if(token.index>cursor)body.appendChild(context.platform.document.createTextNode(text.slice(cursor,token.index)));
                     const span=context.platform.document.createElement("span");
-                    span.textContent=token[0];body.appendChild(span);
+                    span.textContent=token[0].split("").filter((_char,index)=>!delimiters.has(token.index+index)).join("");
+                    const format=emphasis.find(part=>token.index<part.end && token.index+token[0].length>part.start);
+                    if(format)span.dataset.emphasis=format.kind;
+                    body.appendChild(span);
                     words.push({span,start:token.index,end:token.index+token[0].length});
                     cursor=token.index+token[0].length;
                 }

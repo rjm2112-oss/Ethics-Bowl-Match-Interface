@@ -213,6 +213,22 @@
             panelSetup.style.display = panelSetup.hidden ? "none" : "";
             const panel = context.settings.MODEL_CATALOG.getJudgePanel(context.ui.judgePanelPresetSelectEl.value);
             context.platform.document.getElementById("judgePanelSummary").textContent = panel.models.map((model, index) => `${context.services.judgeLabel(index + 1)}: ${context.services.formatModelLabel(model, {includeProvider:false})}`).join("\n");
+            const matchModels = context.platform.document.getElementById("matchJudgeModels");
+            if (matchModels) {
+                const matchPanel = isLiveMatchScreenVisible()
+                    ? context.settings.MODEL_CATALOG.getJudgePanel(context.state.judgePanelPreset)
+                    : panel;
+                matchModels.replaceChildren(...matchPanel.models.map((model, index) => {
+                    const row = context.platform.document.createElement("div");
+                    const label = context.platform.document.createElement("dt");
+                    label.textContent = context.services.judgeLabel(index + 1);
+                    const name = context.platform.document.createElement("dd");
+                    name.textContent = context.services.formatModelLabel(model, { includeProvider: false });
+                    row.appendChild(label);
+                    row.appendChild(name);
+                    return row;
+                }));
+            }
         }
 
         function messageKindForRole(role) {
