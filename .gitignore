@@ -9,3 +9,22 @@ dist/
 out/
 *.log
 *.AppImage
+
+# Private local diagnostics, checkpoints and build retention
+.env*
+.rebuild/
+evidence/
+builds/
+.build-archive/
+
+# Only public maintenance docs and package validation script are proposed
+scripts/*
+!scripts/verify-package.cjs
+docs/*
+!docs/debate-process.md
+!docs/final-scoring-format.md
+!docs/release-builds.md
+!docs/word-policy-validation.md
+
+# Full unused recognition diagnostics remain private
+test/fixtures/whisper-source-prompt-omission.json

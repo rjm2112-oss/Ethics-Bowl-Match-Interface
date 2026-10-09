@@ -125,6 +125,7 @@ async function postJsonWithRetries({
     url,
     headers,
     body,
+    recordContext,
     retryStatuses,
     sleep,
     maxAttempts = 3,
@@ -138,7 +139,8 @@ async function postJsonWithRetries({
         makeOptions: () => ({
             method: "POST",
             headers: { "Content-Type": "application/json", ...headers },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            ...(recordContext?{recordContext}:{})
         }),
         retryStatuses,
         sleep,

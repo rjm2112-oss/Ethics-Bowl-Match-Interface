@@ -4,19 +4,20 @@ const modelCatalog = require("../shared/model-catalog");
 
 const PROVIDERS = Object.freeze(Object.keys(modelCatalog.PROVIDERS));
 const REASONING_EFFORTS_BY_MODEL = Object.freeze({
-    "gpt-5.6-sol": new Set(["none", "low", "medium", "high", "xhigh", "max"]),
-    "gpt-5.6-terra": new Set(["none", "low", "medium", "high", "xhigh", "max"]),
-    "gpt-5.6-luna": new Set(["none", "low", "medium", "high", "xhigh", "max"]),
-    "claude-fable-5": new Set(["low", "medium", "high", "xhigh", "max"]),
-    "claude-sonnet-5": new Set(["low", "medium", "high", "xhigh", "max"])
+    "gpt-6.1-sol": new Set(["low", "medium", "high", "xhigh", "max"]),
+    "gpt-6-astra": new Set(["low", "medium", "high", "xhigh", "max"]),
+    "gpt-6-luna": new Set(["none", "low", "medium", "high", "xhigh", "max"]),
+    "claude-fable-5-1": new Set(["low", "medium", "high", "xhigh", "max"]),
+    "claude-opus-5-5": new Set(["low", "medium", "high", "xhigh", "max"]),
+    "claude-sonnet-5-5": new Set(["low", "medium", "high", "xhigh", "max"]),
+    "claude-haiku-5-5": new Set(["low", "medium", "high", "xhigh", "max"])
 });
 const SPEECH_MODELS = new Set([
     modelCatalog.AUDIO_MODELS.speech,
     modelCatalog.AUDIO_MODELS.moderatorSpeech
 ]);
 const SPEECH_VOICES_BY_MODEL = new Map([
-    [modelCatalog.AUDIO_MODELS.speech, new Set(["alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"])],
-    [modelCatalog.AUDIO_MODELS.moderatorSpeech, new Set(["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"])]
+    [modelCatalog.AUDIO_MODELS.speech, new Set(["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"])]
 ]);
 const INSTRUCTION_CAPABLE_SPEECH_MODELS = new Set([modelCatalog.AUDIO_MODELS.moderatorSpeech]);
 const TRANSCRIPTION_MODELS = new Set([modelCatalog.AUDIO_MODELS.finalTranscription]);
@@ -41,7 +42,7 @@ function boundedString(value, label, { required = false, maxLength = 100000 } = 
     if (typeof value !== "string") throw new Error(`${label} must be text.`);
     const cleaned = value.trim();
     if (required && !cleaned) throw new Error(`${label} is required.`);
-    if (cleaned.length > maxLength) throw new Error(`${label} is too long.`);
+    if (cleaned.length > maxLength) throw new Error(`${label} exceeds the app transport limit of ${maxLength.toLocaleString("en-US")} UTF-16 units (${cleaned.length.toLocaleString("en-US")} received). Nothing was truncated or sent. Explicitly shorten this input before trying again.`);
     return cleaned;
 }
 
@@ -77,7 +78,7 @@ function validateJsonSchema(value) {
     } catch {
         throw new Error("The JSON schema is not serializable.");
     }
-    if (!serialized || serialized.length > 100000) throw new Error("The JSON schema is too large.");
+    if (!serialized || serialized.length > 100000) throw new Error("The JSON schema exceeds the app transport limit of 100,000 UTF-16 units. Nothing was truncated or sent. Reduce the schema before trying again.");
     return { name, strict: schemaRequest.strict !== false, schema };
 }
 
@@ -91,7 +92,7 @@ function validateGenerateRequest(payload) {
         throw new Error("The selected model does not belong to that AI provider.");
     }
 
-    let reasoningEffort = null;
+    let reasoningEffort = modelCatalog.REASONING_POLICIES.participant;
     if (request.reasoningEffort != null && request.reasoningEffort !== "") {
         reasoningEffort = boundedString(request.reasoningEffort, "Reasoning effort", { required: true, maxLength: 16 }).toLowerCase();
         if (!REASONING_EFFORTS_BY_MODEL[catalogModel.id]?.has(reasoningEffort)) {
@@ -103,7 +104,10 @@ function validateGenerateRequest(payload) {
         model: catalogModel.id,
         systemPrompt: boundedString(request.systemPrompt, "System prompt", { maxLength: 150000 }),
         userPrompt: boundedString(request.userPrompt, "User prompt", { required: true, maxLength: 500000 }),
-        maxTokens: boundedInteger(request.maxTokens, "Output limit", 800, 1, 12000),
+        maxTokens: modelCatalog.getTextOutputBudget(
+            boundedInteger(request.maxTokens, "Output limit", 800, 1, modelCatalog.MAX_TEXT_OUTPUT_TOKENS),
+            reasoningEffort
+        ),
         requestTimeoutMs: boundedInteger(
             request.requestTimeoutMs,
             "Request timeout",
@@ -112,12 +116,34 @@ function validateGenerateRequest(payload) {
             MAX_GENERATE_REQUEST_TIMEOUT_MS
         ),
         reasoningEffort,
-        jsonSchema: validateJsonSchema(request.jsonSchema)
+        jsonSchema: validateJsonSchema(request.jsonSchema),
+        ...(request.recordContext != null ? {recordContext:validateGenerationRecordContext(request.recordContext)} : {})
     };
+}
+
+// Diagnostic metadata only: never inserted into the provider prompt.
+function validateGenerationRecordContext(value) {
+    const input=requireObject(value,"Generation context");
+    return {
+        phaseId:boundedString(input.phaseId,"Generation phase",{required:true,maxLength:100}),
+        matchRunId:boundedInteger(input.matchRunId,"Generation run",0,0,Number.MAX_SAFE_INTEGER),
+        wordTarget:boundedInteger(input.wordTarget,"Generation word target",null,1,10000),
+        contentAttempt:boundedInteger(input.contentAttempt,"Content attempt",1,1,2)
+    };
+}
+
+function validateSpeechRecordContext(value) {
+    if(value==null)return undefined;
+    const input=requireObject(value),result={};
+    for(const field of ["phaseId","kind","voiceKey","locale","textModel","reasoningEffort"]){if(input[field]!=null)result[field]=boundedString(input[field],"Speech context",{maxLength:100});}
+    if(input.originalText!=null)result.originalText=boundedString(input.originalText,"Original speech",{maxLength:50000});
+    for(const field of ["matchRunId","chunkIndex","chunkCount","wordTarget","actualWords","phaseDuration","speechStartLeadMs","minimumHandoffGapMs"]){if(input[field]!=null){const n=Number(input[field]);if(!Number.isFinite(n)||n<0||n>1000000)throw Error("Invalid speech context number.");result[field]=n;}}
+    return result;
 }
 
 function validateSpeechRequest(payload) {
     const request = requireObject(payload);
+    if(Object.hasOwn(request,"fidelityRetryOf"))throw Error("Audio fidelity replacement is not a supported request.");
     const model = boundedString(request.model || modelCatalog.AUDIO_MODELS.speech, "Speech model", { required: true, maxLength: 64 });
     if (!SPEECH_MODELS.has(model)) throw new Error("That speech model is not supported.");
     const responseFormat = boundedString(request.responseFormat || "mp3", "Audio format", { required: true, maxLength: 16 }).toLowerCase();
@@ -140,7 +166,8 @@ function validateSpeechRequest(payload) {
         voice,
         responseFormat,
         ...(instructions ? { instructions } : {}),
-        ...(speed == null ? {} : { speed })
+        ...(speed == null ? {} : { speed }),
+        ...(request.recordContext?{recordContext:validateSpeechRecordContext(request.recordContext)}:{})
     };
 }
 
@@ -167,10 +194,10 @@ function defaultAudioFileName(mimeType) {
     return "recording.webm";
 }
 
-function validateTranscriptionRequest(payload) {
+function validateTranscriptionRequest(payload, { alignment = false } = {}) {
     const request = requireObject(payload);
     const model = boundedString(request.model || modelCatalog.AUDIO_MODELS.finalTranscription, "Transcription model", { required: true, maxLength: 64 });
-    if (!TRANSCRIPTION_MODELS.has(model)) throw new Error("That transcription model is not supported.");
+    if (alignment ? model !== "whisper-1" : !TRANSCRIPTION_MODELS.has(model)) throw new Error("That transcription model is not supported.");
     const bytes = normalizeAudioBytes(request.bytes);
     if (!bytes.byteLength) throw new Error("The audio recording is empty.");
     if (bytes.byteLength > MAX_AUDIO_BYTES) throw new Error("The audio recording is too large.");
@@ -183,7 +210,19 @@ function validateTranscriptionRequest(payload) {
         : boundedString(request.language, "Transcription language", { required: true, maxLength: 20 }).toLowerCase();
     if (language && !/^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/i.test(language)) throw new Error("The transcription language is not valid.");
     const prompt = boundedString(request.prompt, "Transcription prompt", { maxLength: 5000 });
-    return { model, bytes, mimeType, fileName, language, prompt };
+    return { model, bytes, mimeType, fileName, language, prompt, ...(alignment ? {wordTimestamps:true} : {}) };
+}
+
+function validateAlignmentRequest(payload) {
+    const request = requireObject(payload);
+    const originalText = boundedString(request.originalText, "Alignment source", {required:true,maxLength:4096});
+    const durationSeconds = Number(request.durationSeconds);
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || durationSeconds > 600) throw new Error("Alignment audio duration is invalid.");
+    const transcription = validateTranscriptionRequest({...request,model:"whisper-1",prompt:""}, {alignment:true});
+    if(Object.hasOwn(request,"transcriptPolicy"))throw Error("Speech recognition has one canonical transcript policy; do not provide transcriptPolicy.");
+    const recordId=request.recordId==null?null:boundedString(request.recordId,"Speech record ID",{required:true,maxLength:36});
+    if(recordId && !/^[a-f0-9-]{36}$/.test(recordId))throw Error("Invalid speech record ID.");
+    return {...transcription, originalText, durationSeconds, recordId};
 }
 
 module.exports = {
@@ -193,6 +232,7 @@ module.exports = {
     PROVIDERS,
     SPEECH_MODELS,
     TRANSCRIPTION_MODELS,
+    validateAlignmentRequest,
     validateCredentialKey,
     validateGenerateRequest,
     validateProvider,

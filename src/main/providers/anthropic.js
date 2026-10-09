@@ -1,5 +1,7 @@
 "use strict";
 
+const { MAX_TEXT_OUTPUT_TOKENS } = require("../../shared/model-catalog");
+
 const {
     createApiError,
     defaultSleep,
@@ -27,6 +29,22 @@ function detectIncompleteResponse(response) {
     return stopReason;
 }
 
+// Claude supports numeric enums, but rejects integer minimum/maximum.
+// A finite enum preserves exactly the same official scoring domain.
+function encodeBoundedIntegers(schema) {
+    if (Array.isArray(schema)) return schema.map(encodeBoundedIntegers);
+    if (!schema || typeof schema !== "object") return schema;
+    const result = Object.fromEntries(Object.entries(schema).map(([key, value]) => [key, encodeBoundedIntegers(value)]));
+    if (result.type === "integer" && Number.isInteger(result.minimum) && Number.isInteger(result.maximum)
+        && result.maximum >= result.minimum && result.maximum - result.minimum <= 1000) {
+        const values = Array.from({length: result.maximum - result.minimum + 1}, (_, index) => result.minimum + index);
+        result.enum = Array.isArray(result.enum) ? values.filter(value => result.enum.includes(value)) : values;
+        delete result.minimum;
+        delete result.maximum;
+    }
+    return result;
+}
+
 function createAnthropicAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSleep, requestTimeoutMs = 90000 } = {}) {
     if (typeof fetchImpl !== "function") throw new Error("A fetch implementation is required.");
 
@@ -42,10 +60,13 @@ function createAnthropicAdapter({ fetchImpl = globalThis.fetch, sleep = defaultS
             if (request.jsonSchema) {
                 body.output_config.format = {
                     type: "json_schema",
-                    schema: request.jsonSchema.schema
+                    schema: encodeBoundedIntegers(request.jsonSchema.schema)
                 };
             }
-            if (request.reasoningEffort) body.output_config.effort = request.reasoningEffort;
+            if (request.reasoningEffort) {
+                body.output_config.effort = request.reasoningEffort;
+                body.thinking = { type: "adaptive", display: "omitted" };
+            }
         }
 
         const response = await postJsonWithRetries({
@@ -56,6 +77,7 @@ function createAnthropicAdapter({ fetchImpl = globalThis.fetch, sleep = defaultS
                 "anthropic-version": ANTHROPIC_VERSION
             },
             body,
+            recordContext:request.recordContext,
             retryStatuses: RETRY_STATUSES,
             sleep,
             requestTimeoutMs: request.requestTimeoutMs || requestTimeoutMs
@@ -66,14 +88,16 @@ function createAnthropicAdapter({ fetchImpl = globalThis.fetch, sleep = defaultS
         try { data = await response.json(); } catch { throw new Error("The AI provider returned an unreadable response."); }
         const stopReason = detectIncompleteResponse(data);
         if (stopReason === "max_tokens") {
-            if (allowOutputBudgetRecovery) {
+            if (allowOutputBudgetRecovery && request.maxTokens < MAX_TEXT_OUTPUT_TOKENS) {
                 return generate({
                     ...request,
-                    maxTokens: Math.min(12000, Math.max(request.maxTokens + 1200, Math.round(request.maxTokens * 1.5)))
+                    maxTokens: Math.min(MAX_TEXT_OUTPUT_TOKENS, Math.max(request.maxTokens + 1200, Math.round(request.maxTokens * 1.5)))
                 }, apiKey, false);
             }
-            throw new Error("The model reached its output-token limit before completing the response.");
+            throw new Error("The model exhausted its total output-token budget (reasoning plus answer) before completing the response. Partial text was not accepted; reasoning effort was preserved.");
         }
+        if (stopReason === "model_context_window_exceeded") throw new Error("The model reached its context-window limit before completing the response. Partial text was not accepted. Use a model with a larger context window or explicitly shorten the case/instructions; the app does not clip the prompt.");
+        if (stopReason !== "end_turn") throw new Error(`The AI provider did not complete its turn (${stopReason || "missing stop reason"}). Partial text was not accepted.`);
         const text = extractText(data);
         if (!text) throw new Error("The AI provider returned no text.");
         if (request.jsonSchema) {
@@ -92,5 +116,6 @@ module.exports = {
     MESSAGES_URL,
     createAnthropicAdapter,
     detectIncompleteResponse,
-    extractText
+    extractText,
+    encodeBoundedIntegers
 };

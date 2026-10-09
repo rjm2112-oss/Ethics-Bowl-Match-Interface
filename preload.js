@@ -13,6 +13,8 @@ const api = Object.freeze({
     }),
     audio: Object.freeze({
         speech: (request) => ipcRenderer.invoke("audio:speech", request),
+        recordSpeechEvent: (request) => ipcRenderer.invoke("audio:record-speech", request),
+        alignSpeech: (request) => ipcRenderer.invoke("audio:align-speech", request),
         transcribe: (request) => ipcRenderer.invoke("audio:transcribe", request)
     })
 });

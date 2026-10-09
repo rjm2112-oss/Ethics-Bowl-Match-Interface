@@ -56,7 +56,7 @@ test("moderator announcements and judge questions never create timing-result car
     assert.equal(shouldReportTimedMessage({ kind: "ai" }, { kind: "confer", duration: 180 }), false);
 });
 
-test("whole-speech playback uses one rate that targets the available clock time", () => {
+test("whole-speech playback reserves observed startup overhead separately from timer lead", () => {
     const result = planWholeSpeechPlayback({
         audioDurationSeconds: 285,
         timerLeadMs: 350,
@@ -65,8 +65,10 @@ test("whole-speech playback uses one rate that targets the available clock time"
         maximumPlaybackRate: 1.09
     });
 
-    assert.ok(Math.abs(result.rawPlaybackRate - (285 / 299.65)) < 1e-12);
+    assert.ok(Math.abs(result.rawPlaybackRate - (285 / 296.65)) < 1e-12);
     assert.equal(result.playbackRate, result.rawPlaybackRate);
+    assert.equal(result.playbackReserveSeconds, 3);
+    assert.ok(Math.abs(result.projectedUnreservedMarginSeconds - 3) < 1e-9);
     assert.ok(Math.abs(result.projectedTimerConsumedSeconds - 300) < 1e-9);
 });
 
@@ -105,4 +107,28 @@ test("concurrent timing work is bounded and returned in original chunk order", a
 
     assert.equal(peakActive, 3);
     assert.deepEqual(results, ["chunk-0", "chunk-1", "chunk-2", "chunk-3", "chunk-4"]);
+});
+
+
+test("reserve changes playback planning without changing approved word targets or rate bounds", () => {
+    const options = { audioDurationSeconds: 127.223968, timerLeadMs: 350, timerBudgetSeconds: 140 };
+    const before = planWholeSpeechPlayback({ ...options, playbackReserveSeconds: 0 });
+    const after = planWholeSpeechPlayback(options);
+    assert.equal(before.playbackRate, 0.924);
+    assert.ok(Math.abs(after.playbackRate - (127.223968 / 136.65)) < 1e-12);
+    assert.ok(after.playbackRate >= 0.924 && after.playbackRate <= 1.09);
+    assert.ok(Math.abs(after.projectedUnreservedMarginSeconds - 3) < 1e-9);
+    const long = planWholeSpeechPlayback({ ...options, audioDurationSeconds: 171.863 });
+    assert.equal(long.playbackRate, 1.09);
+    assert.ok(long.projectedSignedRemainingSeconds < 0);
+    const prompt = require('../src/shared/ai-turn-prompt');
+    assert.equal(prompt.getWordTarget({ duration: 140, locale: 'en' }).target, 330);
+});
+
+test("reserve is explicit in the plan and invalid values cannot expand the clock", () => {
+    for (const reserve of [-3, NaN, Infinity]) {
+        const plan = planWholeSpeechPlayback({ audioDurationSeconds: 100, timerBudgetSeconds: 140, playbackReserveSeconds: reserve });
+        assert.equal(plan.playbackReserveSeconds, 0);
+        assert.equal(plan.availablePlaybackSeconds, 140);
+    }
 });

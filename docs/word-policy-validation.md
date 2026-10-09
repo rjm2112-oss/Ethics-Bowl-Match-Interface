@@ -1,0 +1,9 @@
+# Approved word-policy validation — 9 October 2026
+
+The active source uses the sole `Write exactly N words.` instruction at the absolute end of each participant request. Targets verified in source/tests: English 700/420/420/330; Québec French 675/405/405/315, ordered presentation/commentary/response/judge answer. Judge questions retain their separate maximum 75-word instruction.
+
+A deterministic pre-TTS app count accepts the inclusive ±10% range. A greater miss starts exactly one fresh complete answer with byte-identical prompt text, model and effort. The first answer stays in private generation/cost records but never reaches TTS or participant/judge transcript. A second miss is selected unchanged under the ordinary hard cutoff; a technical retry failure surfaces an error. No draft critique, count feedback, rewrite, countdown or third content request is added.
+
+225 tests pass. New coverage includes 192 boundary cases across both languages/providers and all 12 contestant phases, two misses, request freezing, discarded-text isolation, unique attempt evidence IDs and retained usage, separate bounded technical failures, and actual reset/close during pending retry. 88 JavaScript files pass syntax checks. 9 native offline AI/human/hybrid viewport states pass with zero provider calls, credential mutations, external requests or page errors. Mocked transports test policy behavior; this is not paid end-to-end validation or a new audio-timing claim.
+
+Evidence: .rebuild/validation/word-policy/tests.txt, syntax.json, native-smoke.json, verification.json and active-source-hashes.json. The verification report identifies the pre-policy source checkpoint. Current process: [debate-process.md](debate-process.md). Credentials, historical match evidence and the experiment’s frozen source snapshot are preserved. These offline policy tests performed no paid calls, builds or pushes.

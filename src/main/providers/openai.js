@@ -1,5 +1,8 @@
 "use strict";
 
+const {createHash}=require("node:crypto");
+const { MAX_TEXT_OUTPUT_TOKENS } = require("../../shared/model-catalog");
+
 const {
     createApiError,
     defaultSleep,
@@ -77,14 +80,14 @@ function emptyTextError(response) {
     const reason = String(response?.incomplete_details?.reason || response?.status_details?.reason || "").trim();
     const message = String(response?.error?.message || response?.incomplete_details?.message || response?.status_details?.message || "").trim();
     if (reason === "max_output_tokens") {
-        return new Error("The model used its output budget before producing visible text. Try a lower reasoning setting or a higher output limit.");
+        return new Error("The model exhausted its total output-token budget before producing visible text. Reasoning effort was preserved; the output limit may need to increase.");
     }
     if (message) return new Error(`The AI provider returned no text: ${message}`);
     if (reason) return new Error(`The AI provider returned no text (${reason}).`);
     return new Error("The AI provider returned no text.");
 }
 
-function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSleep, requestTimeoutMs = 90000 } = {}) {
+function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSleep, requestTimeoutMs = 90000, recordStore } = {}) {
     if (typeof fetchImpl !== "function") throw new Error("A fetch implementation is required.");
 
     async function generate(request, apiKey, allowOutputBudgetRecovery = true) {
@@ -111,6 +114,7 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
             url: RESPONSES_URL,
             headers: { Authorization: `Bearer ${apiKey}` },
             body,
+            recordContext:request.recordContext,
             retryStatuses: RETRY_STATUSES,
             sleep,
             requestTimeoutMs: request.requestTimeoutMs || requestTimeoutMs
@@ -121,14 +125,19 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
         try { data = await response.json(); } catch { throw new Error("The AI provider returned an unreadable response."); }
         const incompleteReason = String(data?.incomplete_details?.reason || data?.status_details?.reason || "").trim();
         if (incompleteReason === "max_output_tokens") {
-            if (allowOutputBudgetRecovery) {
+            if (allowOutputBudgetRecovery && request.maxTokens < MAX_TEXT_OUTPUT_TOKENS && (!data.status || data.status === "incomplete")) {
                 return generate({
                     ...request,
-                    maxTokens: Math.min(12000, Math.max(request.maxTokens + 1200, Math.round(request.maxTokens * 1.5)))
+                    maxTokens: Math.min(MAX_TEXT_OUTPUT_TOKENS, Math.max(request.maxTokens + 1200, Math.round(request.maxTokens * 1.5)))
                 }, apiKey, false);
             }
-            throw new Error("The model reached its output-token limit before completing the response.");
+            throw new Error("The model exhausted its total output-token budget (reasoning plus answer) before completing the response. Partial text was not accepted; reasoning effort was preserved.");
         }
+        const status = String(data?.status || "").toLowerCase();
+        if (status !== "completed" || incompleteReason || data?.error) {
+            throw new Error(`The AI provider did not complete the response (${status || "missing completion status"}${incompleteReason ? `: ${incompleteReason}` : ""}). Partial text was not accepted. If the context limit was reached, use a model with a larger context window or explicitly shorten the case/instructions; the app does not clip the prompt.`);
+        }
+        if ((data.output || []).some(item => item?.type === "refusal" || item?.refusal || (item?.content || []).some(part => part?.type === "refusal" || part?.refusal))) throw new Error("The AI provider refused this request.");
         if (request.jsonSchema) {
             const structured = extractStructured(data);
             if (structured) return structured;
@@ -149,11 +158,15 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
         };
         if (request.instructions) body.instructions = request.instructions;
         if (request.speed != null) body.speed = request.speed;
+        const requestHash=createHash("sha256").update(JSON.stringify(body)).digest("hex");
+        const cached=recordStore?.cachedSpeech(requestHash,request.recordContext);
+        if(cached)return cached;
         return postJsonWithRetries({
             fetchImpl,
             url: SPEECH_URL,
             headers: { Authorization: `Bearer ${apiKey}` },
             body,
+            recordContext:request.recordContext,
             retryStatuses: RETRY_STATUSES,
             sleep,
             requestTimeoutMs,
@@ -164,7 +177,8 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
                 if (!buffer.byteLength) throw new Error("The AI provider returned empty speech audio.");
                 return {
                     bytes: new Uint8Array(buffer),
-                    mimeType: response.headers?.get?.("content-type") || "audio/mpeg"
+                    mimeType: response.headers?.get?.("content-type") || "audio/mpeg",
+                    ...(response.ethicsRecordId?{recordId:response.ethicsRecordId}:{})
                 };
             }
         });
@@ -178,12 +192,17 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
                 const form = new FormData();
                 form.append("file", new Blob([request.bytes], { type: request.mimeType }), request.fileName);
                 form.append("model", request.model);
-                if (request.language) form.append("language", request.language);
+                if (request.language) form.append(request.wordTimestamps ? "language" : "languages[]", request.language);
+                if (request.wordTimestamps) {
+                    form.append("response_format", "verbose_json");
+                    form.append("timestamp_granularities[]", "word");
+                }
                 if (request.prompt) form.append("prompt", request.prompt);
                 return {
                     method: "POST",
                     headers: { Authorization: `Bearer ${apiKey}` },
-                    body: form
+                    body: form,
+                    recordContext:request.recordContext
                 };
             },
             retryStatuses: RETRY_STATUSES,
@@ -195,6 +214,11 @@ function createOpenAiAdapter({ fetchImpl = globalThis.fetch, sleep = defaultSlee
         try { data = await response.json(); } catch { throw new Error("The AI provider returned an unreadable transcription."); }
         const text = typeof data?.text === "string" ? data.text.trim() : "";
         if (!text) throw new Error("No speech was detected.");
+        if (request.wordTimestamps) {
+            if (!Array.isArray(data.words) || !data.words.length) throw new Error("No word timestamps were returned.");
+            if ((data.segments || []).some(segment => segment.avg_logprob < -1 || segment.compression_ratio > 2.4)) throw new Error("Word timestamp recognition quality is insufficient.");
+            return {text,words:data.words,duration:data.duration,usage:data.usage,recordId:response.ethicsRecordId};
+        }
         return { text };
     }
 

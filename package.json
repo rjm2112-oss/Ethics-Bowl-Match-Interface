@@ -11,7 +11,7 @@
     "start:timing:full:en": "electron . --timing-test --auto-start --lang=en",
     "start:timing:full:fr": "electron . --timing-test --auto-start --lang=fr-ca",
     "start:timing:one:en": "electron . --timing-test --auto-start --timing-test-limit=1 --lang=en",
-    "test": "node --test test/*.test.js",
+    "test": "node --test --test-isolation=none test/*.test.js",
     "pack": "electron-builder --dir --publish never",
     "dist": "electron-builder --publish never",
     "dist:linux": "electron-builder --linux AppImage --publish never",
@@ -29,11 +29,6 @@
       "main.js",
       "preload.js",
       "src/main/**/*.js",
-      "src/shared/model-catalog.js",
-      "src/shared/ai-turn-prompt.js",
-      "src/shared/phase-timer-policy.js",
-      "src/shared/speech-timing.js",
-      "src/shared/scorecard-tally.js",
       "debater.html",
       "debater.js",
       "instructions.html",
@@ -41,8 +36,11 @@
       "app-logo.png",
       "app-logo-black.png",
       "assets/app-icon.png",
+      "assets/fonts/**/*",
       "ethics-bowl-logo.png",
-      "assets/icon.png"
+      "assets/icon.png",
+      "src/shared/**/*.js",
+      "src/renderer/**/*.js"
     ],
     "icon": "assets/app-icon.png",
     "linux": {
@@ -51,7 +49,8 @@
       "target": [
         "AppImage"
       ],
-      "category": "Education"
+      "category": "Education",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -64,7 +63,14 @@
         "dmg",
         "zip"
       ],
-      "category": "public.app-category.education"
+      "category": "public.app-category.education",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "nsis": {
+      "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-win-${arch}-portable.${ext}"
     }
   },
   "allowScripts": {

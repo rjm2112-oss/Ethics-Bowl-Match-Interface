@@ -6,6 +6,8 @@ const { pathToFileURL } = require("node:url");
 const { CredentialStore } = require("./src/main/credential-store");
 const { loadCredentialEnvironment, resolveCredentialFilePath } = require("./src/main/env");
 const { createSenderValidator, registerIpcHandlers } = require("./src/main/ipc");
+const {createGenerationRecords}=require("./src/main/generation-records");
+const {createFileAuditSink} = require("./src/main/api-audit");
 const { createProviderService } = require("./src/main/provider-service");
 
 const RENDERER_FILE = path.join(__dirname, "debater.html");
@@ -71,7 +73,7 @@ function createWindow() {
     const win = new BrowserWindow({
         width: 1600,
         height: 1000,
-        minWidth: 1200,
+        minWidth: 720,
         minHeight: 800,
         autoHideMenuBar: true,
         title: "Ethics Bowl Match",
@@ -135,7 +137,11 @@ app.whenReady().then(() => {
         safeStorage,
         environment
     });
-    const providerService = createProviderService({ credentialStore });
+    const recordsPath=process.env.ETHICS_SPEECH_RECORDS_DIR || path.join(app.isPackaged?app.getPath("userData"):__dirname,"evidence","spoken-generations",new Date().toISOString().replace(/[:.]/g,"-"));
+    const auditPath=process.env.ETHICS_API_AUDIT_PATH || path.join(recordsPath,"requests.jsonl");
+    const recordStore=createGenerationRecords(path.resolve(recordsPath));
+    const auditSink=createFileAuditSink(path.resolve(auditPath));
+    const providerService = createProviderService({ credentialStore, auditSink, recordStore });
     const isTrustedSender = createSenderValidator({
         getWindow: () => mainWindow,
         allowedFilePath: RENDERER_FILE

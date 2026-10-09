@@ -5,14 +5,6 @@
 })(typeof globalThis === "object" ? globalThis : this, function createScorecardTally() {
     "use strict";
 
-    function createThresholdBands(ranges) {
-        return Object.freeze(ranges.map(([min, max]) => Object.freeze({
-            label: `${min}-${max}`,
-            min,
-            max
-        })));
-    }
-
     const OFFICIAL_BREAKDOWN_RANGES = Object.freeze({
         presentationQuestion: Object.freeze([0, 5]),
         presentationEthics: Object.freeze([0, 5]),
@@ -21,19 +13,6 @@
         judgesQuestions: Object.freeze([0, 20]),
         commentary: Object.freeze([0, 10]),
         respectfulDialogue: Object.freeze([0, 5])
-    });
-
-    const FIVE_POINT_THRESHOLD_BANDS = createThresholdBands([[0, 1], [2, 3], [4, 5]]);
-    const TEN_POINT_THRESHOLD_BANDS = createThresholdBands([[0, 2], [3, 5], [6, 8], [9, 10]]);
-    const TWENTY_POINT_THRESHOLD_BANDS = createThresholdBands([[0, 5], [6, 10], [11, 15], [16, 20]]);
-    const OFFICIAL_THRESHOLD_BANDS = Object.freeze({
-        presentationQuestion: FIVE_POINT_THRESHOLD_BANDS,
-        presentationEthics: FIVE_POINT_THRESHOLD_BANDS,
-        presentationViewpoints: FIVE_POINT_THRESHOLD_BANDS,
-        responseToFeedback: TEN_POINT_THRESHOLD_BANDS,
-        judgesQuestions: TWENTY_POINT_THRESHOLD_BANDS,
-        commentary: TEN_POINT_THRESHOLD_BANDS,
-        respectfulDialogue: FIVE_POINT_THRESHOLD_BANDS
     });
 
     function normalizeWholeNumberInRange(value, min, max) {
@@ -58,47 +37,19 @@
         return total;
     }
 
-    function normalizeThresholdAudit(value, criterionKey) {
+    function normalizeOfficialParticipantBreakdown(value) {
         if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-        const range = OFFICIAL_BREAKDOWN_RANGES[criterionKey];
-        const bands = OFFICIAL_THRESHOLD_BANDS[criterionKey];
-        if (!range || !bands) return null;
-        const score = normalizeWholeNumberInRange(value.score, range[0], range[1]);
-        const highestSatisfiedBand = typeof value.highestSatisfiedBand === "string"
-            ? value.highestSatisfiedBand.trim()
-            : "";
-        const evidence = typeof value.evidence === "string" ? value.evidence.trim() : "";
-        const limitation = typeof value.limitation === "string" ? value.limitation.trim() : "";
-        const hasMaterialLimitation = typeof value.hasMaterialLimitation === "boolean"
-            ? value.hasMaterialLimitation
-            : null;
-        const unmetNextThreshold = typeof value.unmetNextThreshold === "string"
-            ? value.unmetNextThreshold.trim()
-            : "";
-        const declaredBand = bands.find((band) => band.label === highestSatisfiedBand) || null;
-        if (
-            score == null ||
-            !declaredBand ||
-            score < declaredBand.min ||
-            score > declaredBand.max ||
-            !evidence ||
-            !limitation ||
-            hasMaterialLimitation == null ||
-            !unmetNextThreshold
-        ) return null;
-        const isTopBand = declaredBand === bands[bands.length - 1];
-        const materialLimitationCap = range[1] === 20 ? 18 : declaredBand.min;
-        const calibratedScore = isTopBand && hasMaterialLimitation
-            ? Math.min(score, materialLimitationCap)
-            : score;
-        return Object.freeze({
-            score: calibratedScore,
-            highestSatisfiedBand,
-            evidence,
-            limitation,
-            hasMaterialLimitation,
-            unmetNextThreshold
-        });
+        const criteria = Object.keys(OFFICIAL_BREAKDOWN_RANGES);
+        if (Object.keys(value).length !== criteria.length) return null;
+        const result = {};
+        for (const key of criteria) {
+            const [min, max] = OFFICIAL_BREAKDOWN_RANGES[key];
+            if (!Object.hasOwn(value, key) || typeof value[key] !== "number") return null;
+            const score = normalizeWholeNumberInRange(value[key], min, max);
+            if (score == null) return null;
+            result[key] = score;
+        }
+        return Object.freeze(result);
     }
 
     function computeVoteTally(cards) {
@@ -129,9 +80,8 @@
 
     return Object.freeze({
         OFFICIAL_BREAKDOWN_RANGES,
-        OFFICIAL_THRESHOLD_BANDS,
         computeVoteTally,
-        normalizeThresholdAudit,
+        normalizeOfficialParticipantBreakdown,
         normalizeWholeNumberInRange,
         totalOfficialParticipantBreakdown
     });

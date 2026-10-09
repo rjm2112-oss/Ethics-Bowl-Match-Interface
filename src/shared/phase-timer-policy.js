@@ -7,7 +7,7 @@
 
     function startsWithAutoSpeech(phase, { speakerIsAiControlled = false, judgeMode = "" } = {}) {
         if (!phase?.duration) return false;
-        if (phase.kind === "judgeQuestion") return judgeMode === "ai";
+        if (phase.kind === "judgeQuestion") return judgeMode === "ai" || judgeMode === "hybrid";
         if (phase.kind === "speech" || phase.kind === "judgeAnswer") return speakerIsAiControlled;
         return false;
     }

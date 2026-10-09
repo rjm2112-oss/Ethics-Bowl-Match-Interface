@@ -9,6 +9,8 @@ const CHANNELS = Object.freeze({
     credentialRemove: "credentials:remove",
     aiGenerate: "ai:generate",
     audioSpeech: "audio:speech",
+    audioAlignSpeech: "audio:align-speech",
+    audioRecordSpeech: "audio:record-speech",
     audioTranscribe: "audio:transcribe"
 });
 
@@ -75,6 +77,8 @@ function registerIpcHandlers({ ipcMain, credentialStore, providerService, isTrus
     }));
     ipcMain.handle(CHANNELS.aiGenerate, secure((payload) => providerService.generate(payload)));
     ipcMain.handle(CHANNELS.audioSpeech, secure((payload) => providerService.speech(payload)));
+    ipcMain.handle(CHANNELS.audioAlignSpeech, secure((payload) => providerService.alignSpeech(payload)));
+    ipcMain.handle(CHANNELS.audioRecordSpeech, secure((payload) => providerService.recordSpeechEvent(payload)));
     ipcMain.handle(CHANNELS.audioTranscribe, secure((payload) => providerService.transcribe(payload)));
 
     return () => {

@@ -23,16 +23,24 @@
 "
         >
           Ethics Bowl Match
-        </h1>
+        </h1><div id="appStatusStrip" class="status-strip">
+      <div id="instructionsBadge" class="status-chip inactive">
+        Instructions inactive
+      </div>
 
-        <p
-          class="hero-copy"
-          data-i18n-en="Run a full two-case Ethics Bowl-style match between one human participant and one AI opponent, or between two AI participants, with moderator control, timers, voice input, AI or human judges, and scoring."
-          data-i18n-fr="Lancez un match complet de la Coupe éthique Canada
- à deux cas entre une participante humaine et une adversaire IA, ou entre deux participantes IA, avec contrôle du modérateur, minuteries, saisie vocale, juges IA ou humains et pointage."
-        >
-          Run a full two-case Ethics Bowl-style match between one human participant and one AI opponent, or between two AI participants, with moderator control, timers, voice input, AI or human judges, and scoring.
-        </p>
+      <div
+        id="apiKeyStatusBadge"
+        class="status-chip inactive"
+        data-i18n-en="No AI providers configured"
+        data-i18n-fr="Aucun fournisseur d’IA configuré"
+      >
+        No AI providers configured
+      </div>
+
+
+    </div>
+
+
       </div>
 
       <div class="top-links">
@@ -56,228 +64,69 @@
       </div>
     </header>
 
-    <div id="appStatusStrip" class="status-strip">
-      <div id="instructionsBadge" class="status-chip inactive">
-        Instructions inactive
-      </div>
 
-      <div
-        id="apiKeyStatusBadge"
-        class="status-chip inactive"
-        data-i18n-en="No AI providers configured"
-        data-i18n-fr="Aucun fournisseur d’IA configuré"
-      >
-        No AI providers configured
-      </div>
-
-      <div
-        class="status-chip subtle"
-        data-i18n-en="Voice input available on human-controlled turns"
-        data-i18n-fr="Saisie vocale disponible pendant les tours humains"
-      >
-        Voice input available on human-controlled turns
-      </div>
-    </div>
 
     <section id="setupScreen" class="screen-view setup-screen">
       <div class="setup-screen-shell">
         <aside class="side-card setup-card setup-screen-card">
-          <div class="setup-screen-head">
-            <div>
-              <div
-                class="panel-kicker"
-                data-i18n-en="Initial screen"
-                data-i18n-fr="Écran initial"
-              >
-                Initial screen
-              </div>
-              <h2 data-i18n-en="Match Setup" data-i18n-fr="Configuration du match">Match Setup</h2>
-              <p
-                class="small-note"
-                data-i18n-en="Configure participants, judging, voice, and both cases here. When the match begins, the app switches to a live match screen."
-                data-i18n-fr="Configurez ici les participantes, les juges, la voix et les deux cas. Quand le match commence, l’application passe à un écran de match en direct."
-              >
-                Configure participants, judging, voice, and both cases here. When the match begins, the app switches to a live match screen.
-              </p>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <label for="participantOneTypeSelect">
-              <span data-i18n-en="Participant 1 control" data-i18n-fr="Contrôle du participant 1">
-                Participant 1 control
-              </span>
-            </label>
+          <div class="setup-columns"><section class="setup-participants" aria-labelledby="participantsHeading"><h2 data-i18n-en="Match setup" data-i18n-fr="Configuration du match">Match setup</h2>
+  <h3 id="participantsHeading" data-i18n-en="Participants" data-i18n-fr="Participants">Participants</h3>
+  <section class="participant-section" aria-labelledby="participantOneHeading">
+    <h4 id="participantOneHeading" data-i18n-en="Participant 1" data-i18n-fr="Participant 1">Participant 1</h4>
+    <div class="participant-fields"><div class="control-group">
+            <label for="humanNameInput" data-i18n-en="Name" data-i18n-fr="Nom">Name</label>
+            <input id="humanNameInput" type="text" />
+          </div><div class="control-group">
+            <label for="participantOneTypeSelect" data-i18n-en="Control" data-i18n-fr="Contrôle">Control</label>
             <select id="participantOneTypeSelect">
               <option value="human" data-i18n-en="Human" data-i18n-fr="Humain">Human</option>
               <option value="ai" data-i18n-en="AI" data-i18n-fr="IA">AI</option>
             </select>
-            <div
-              class="small-note"
-              data-i18n-en="Participant 2 is always AI-controlled. Switch Participant 1 to AI for an AI-vs-AI match."
-              data-i18n-fr="Le participant 2 est toujours contrôlé par l’IA. Passez le participant 1 à IA pour un match IA contre IA."
-            >
-              Participant 2 is always AI-controlled. Switch Participant 1 to AI for an AI-vs-AI match.
-            </div>
-          </div>
 
-          <div class="control-group">
-            <label for="humanNameInput">
-              <span data-i18n-en="Participant 1 name" data-i18n-fr="Nom du participant 1">
-                Participant 1 name
-              </span>
-            </label>
-            <input id="humanNameInput" type="text" />
-          </div>
-
-          <div class="control-group" id="participantOneModelWrap">
-            <label for="participantOneModelSelect">
-              <span data-i18n-en="Participant 1 model" data-i18n-fr="Modèle du participant 1">
-                Participant 1 model
-              </span>
-            </label>
+          </div><div class="control-group" id="participantOneModelWrap">
+            <label for="participantOneModelSelect" data-i18n-en="AI model" data-i18n-fr="Modèle IA">AI model</label>
             <select id="participantOneModelSelect"></select>
-          </div>
-
-          <div class="control-group">
-            <label for="aiNameInput">
-              <span data-i18n-en="Participant 2 name" data-i18n-fr="Nom du participant 2">
-                Participant 2 name
-              </span>
-            </label>
+          </div></div>
+  </section>
+  <section class="participant-section" aria-labelledby="participantTwoHeading">
+    <div class="participant-section-head"><h4 id="participantTwoHeading" data-i18n-en="Participant 2" data-i18n-fr="Participant 2">Participant 2</h4></div>
+    <div class="participant-fields"><div class="control-group">
+            <label for="aiNameInput" data-i18n-en="Name" data-i18n-fr="Nom">Name</label>
             <input id="aiNameInput" type="text" />
-          </div>
-
-          <div class="control-group">
-            <label for="modelSelect">
-              <span data-i18n-en="Participant 2 model" data-i18n-fr="Modèle du participant 2">
-                Participant 2 model
-              </span>
-            </label>
+          </div><div class="control-group"><label for="participantTwoTypeSelect" data-i18n-en="Control" data-i18n-fr="Contrôle">Control</label><select id="participantTwoTypeSelect"><option value="human" data-i18n-en="Human" data-i18n-fr="Humain">Human</option><option value="ai" selected data-i18n-en="AI" data-i18n-fr="IA">AI</option></select></div><div class="control-group" id="participantTwoModelWrap">
+            <label for="modelSelect" data-i18n-en="AI model" data-i18n-fr="Modèle IA">AI model</label>
             <select id="modelSelect"></select>
           </div>
-
-          <div class="control-group">
-            <label for="coinCallSelect">
-              <span data-i18n-en="Participant 1 coin call" data-i18n-fr="Choix du tirage du participant 1">
-                Participant 1 coin call
-              </span>
-            </label>
+  </div></section>
+  <section class="judging-section" aria-labelledby="judgingHeading"><h4 id="judgingHeading" data-i18n-en="Judging" data-i18n-fr="Évaluation">Judging</h4><div class="control-group">
+            <label for="judgeModeSelect" data-i18n-en="Judges" data-i18n-fr="Juges">Judges</label>
+            <select id="judgeModeSelect">
+              <option value="ai" data-i18n-en="AI judges" data-i18n-fr="Juges IA">AI judges</option>
+              <option value="hybrid" data-i18n-en="AI questions + human scoring" data-i18n-fr="Questions IA + pointage humain">AI questions + human scoring</option>
+              <option value="human" data-i18n-en="Human judges" data-i18n-fr="Juges humains">Human judges</option>
+            </select>
+          </div><div id="judgePanelSetup" class="control-group">
+            <label for="judgePanelPresetSelect" data-i18n-en="Panel preset" data-i18n-fr="Composition du jury">Panel preset</label>
+            <select id="judgePanelPresetSelect"></select>
+            <div id="judgePanelSummary" class="small-note" style="white-space:pre-line"></div>
+          </div></section>
+  <section class="format-details"><h4 data-i18n-en="Match format" data-i18n-fr="Format du match">Match format</h4><div class="control-group">
+            <label for="coinCallSelect" data-i18n-en="Participant 1 coin call" data-i18n-fr="Tirage du participant 1">Participant 1 coin call</label>
             <select id="coinCallSelect">
               <option value="heads" data-i18n-en="Heads" data-i18n-fr="Face">Heads</option>
               <option value="tails" data-i18n-en="Tails" data-i18n-fr="Pile">Tails</option>
             </select>
-          </div>
-
-          <div class="control-group">
-            <label for="judgeModeSelect">
-              <span data-i18n-en="Judge mode" data-i18n-fr="Mode des juges">
-                Judge mode
-              </span>
-            </label>
-            <select id="judgeModeSelect">
-              <option value="ai" data-i18n-en="AI judges" data-i18n-fr="Juges IA">AI judges</option>
-              <option value="human" data-i18n-en="Human judges" data-i18n-fr="Juges humains">Human judges</option>
-            </select>
-          </div>
-
-          <div class="control-group">
-            <label for="moderatorReadFullCaseSelect">
-              <span
-                data-i18n-en="Should the moderator read the whole case?"
-                data-i18n-fr="Le modérateur doit-il lire le cas au complet?"
-              >
-                Should the moderator read the whole case?
-              </span>
-            </label>
+          </div><div class="control-group">
+            <label for="moderatorReadFullCaseSelect" data-i18n-en="Read the full cases aloud" data-i18n-fr="Lire les cas à voix haute">Read the full cases aloud</label>
             <select id="moderatorReadFullCaseSelect">
               <option value="no" data-i18n-en="No" data-i18n-fr="Non">No</option>
               <option value="yes" data-i18n-en="Yes" data-i18n-fr="Oui">Yes</option>
             </select>
-            <div
-              class="small-note"
-              data-i18n-en="This applies to both cases. If Yes, each full case is read when the moderator introduces it."
-              data-i18n-fr="Ce choix s’applique aux deux cas. Si vous choisissez Oui, chaque cas est lu au complet lorsque le modérateur le présente."
-            >
-              This applies to both cases. If Yes, each full case is read when the moderator introduces it.
-            </div>
-          </div>
 
-          <div class="button-cluster">
-            <button
-              id="startMatchBtn"
-              class="primary-btn"
-              type="button"
-              data-i18n-en="Start Match"
-              data-i18n-fr="Démarrer le match"
-            >
-              Start Match
-            </button>
-
-            <button
-              id="resetMatchBtn"
-              class="ghost-btn"
-              type="button"
-              data-i18n-en="Reset Match"
-              data-i18n-fr="Réinitialiser le match"
-            >
-              Reset Match
-            </button>
-          </div>
-
-          <details class="setup-details" open>
-            <summary data-i18n-en="Case #1" data-i18n-fr="Cas 1">Case #1</summary>
-
-            <div class="control-group">
-              <label for="case1TitleInput">
-                <span data-i18n-en="Case title" data-i18n-fr="Titre du cas">Case title</span>
-              </label>
-              <input id="case1TitleInput" type="text" />
-            </div>
-
-            <div class="control-group">
-              <label for="case1QuestionInput">
-                <span data-i18n-en="Moderator question" data-i18n-fr="Question du modérateur">Moderator question</span>
-              </label>
-              <input id="case1QuestionInput" type="text" />
-            </div>
-
-            <div class="control-group">
-              <label for="case1TextInput">
-                <span data-i18n-en="Case text" data-i18n-fr="Texte du cas">Case text</span>
-              </label>
-              <textarea id="case1TextInput" class="case-editor"></textarea>
-            </div>
-          </details>
-
-          <details class="setup-details" open>
-            <summary data-i18n-en="Case #2" data-i18n-fr="Cas 2">Case #2</summary>
-
-            <div class="control-group">
-              <label for="case2TitleInput">
-                <span data-i18n-en="Case title" data-i18n-fr="Titre du cas">Case title</span>
-              </label>
-              <input id="case2TitleInput" type="text" />
-            </div>
-
-            <div class="control-group">
-              <label for="case2QuestionInput">
-                <span data-i18n-en="Moderator question" data-i18n-fr="Question du modérateur">Moderator question</span>
-              </label>
-              <input id="case2QuestionInput" type="text" />
-            </div>
-
-            <div class="control-group">
-              <label for="case2TextInput">
-                <span data-i18n-en="Case text" data-i18n-fr="Texte du cas">Case text</span>
-              </label>
-              <textarea id="case2TextInput" class="case-editor"></textarea>
-            </div>
-          </details>
-
-          <details class="setup-details" open>
-            <summary data-i18n-en="Hardcoded Ethics Bowl match rules" data-i18n-fr="Règles intégrées du match de la Coupe éthique Canada">
-              Hardcoded Ethics Bowl match rules
+          </div></section>
+<details class="setup-details rules-details">
+            <summary data-i18n-en="Match rules & timing" data-i18n-fr="Règles et durées du match">
+              Match rules & timing
             </summary>
 
             <div class="timing-sheet">
@@ -305,111 +154,125 @@
                 <li data-i18n-en="Each judge answer: 2:20" data-i18n-fr="Chaque réponse à un juge : 2:20">Each judge answer: 2:20</li>
               </ul>
             </div>
-          </details>
+          </details><footer class="setup-footer">          <div class="button-cluster">
+            <button
+              id="startMatchBtn"
+              class="primary-btn"
+              type="button"
+              data-i18n-en="Start Match"
+              data-i18n-fr="Démarrer le match"
+            >
+              Start Match
+            </button>
+
+            <button
+              id="resetMatchBtn"
+              class="ghost-btn"
+              type="button"
+              data-i18n-en="Reset Match"
+              data-i18n-fr="Réinitialiser le match"
+            >
+              Reset Match
+            </button>
+          </div>
+
+</footer></section><section class="setup-cases" aria-labelledby="casesHeading"><h3 id="casesHeading" data-i18n-en="Cases" data-i18n-fr="Cas">Cases</h3><div class="case-toolbar"><h3 data-i18n-en="Cases" data-i18n-fr="Cas">Cases</h3><div class="archive-search-control"><div class="control-group"><label for="archiveSearch" data-i18n-en="Find a topic" data-i18n-fr="Rechercher un sujet">Find a topic</label><input type="search" id="archiveSearch" placeholder="" /></div></div></div><section class="archive-browser" aria-label="Case archive">
+
+
+
+
+  <div class="archive-selection-row"><div class="control-group"><label for="archiveYear" data-i18n-en="Season" data-i18n-fr="Saison">Season</label><select id="archiveYear"></select></div><div class="control-group"><label for="archiveEvent" data-i18n-en="Event" data-i18n-fr="Événement">Event</label><select id="archiveEvent"></select></div><div class="control-group"><label for="archiveCase" data-i18n-en="Published case" data-i18n-fr="Cas publié">Published case</label><select id="archiveCase"></select></div><div class="button-cluster"><button id="archiveUse1" type="button" class="secondary-btn" data-i18n-en="Use as Case 1" data-i18n-fr="Utiliser pour le cas 1">Use as Case 1</button><button id="archiveUse2" type="button" class="secondary-btn" data-i18n-en="Use as Case 2" data-i18n-fr="Utiliser pour le cas 2">Use as Case 2</button></div></div>
+
+
+
+<p id="archiveApplied" class="small-note" role="status" aria-live="polite"></p><div class="archive-meta-row"><div class="archive-preview-internal" hidden><span id="archivePreviewTitle"></span><div id="archivePreviewText"></div></div><div class="archive-internal-data" hidden>  <button id="archiveCopySource" type="button" class="ghost-btn" data-i18n-en="Copy source link" data-i18n-fr="Copier le lien source">Copy source link</button><input id="archiveSource" class="archive-source" aria-label="Published source URL" readonly />
+
+
+</div></div><p id="archiveCoverage" class="archive-coverage" role="status"></p></section><div class="case-drafts">          <section class="setup-details case-panel" id="case1EditorPanel"><h4 data-i18n-en="Case 1" data-i18n-fr="Cas 1">Case 1</h4>
+
+            <p id="case1ArchiveOrigin" class="small-note case-origin" hidden></p>
+
+            <div class="control-group">
+              <label for="case1TitleInput">
+                <span data-i18n-en="Case title" data-i18n-fr="Titre du cas">Case title</span>
+              </label>
+              <input id="case1TitleInput" type="text" />
+            </div>
+
+            <div class="control-group">
+  <label for="case1QuestionSelect" data-i18n-en="Moderator question" data-i18n-fr="Question du modérateur">Moderator question</label>
+  <select id="case1QuestionSelect"><option value="custom" data-i18n-en="Custom question" data-i18n-fr="Question personnalisée">Custom question</option></select>
+  <div id="case1CustomQuestionWrap" class="custom-question-field"><label for="case1QuestionInput" data-i18n-en="Custom question" data-i18n-fr="Question personnalisée">Custom question</label><input id="case1QuestionInput" type="text" /></div>
+</div>
+
+            <div class="control-group">
+              <label for="case1TextInput">
+                <span data-i18n-en="Case text" data-i18n-fr="Texte du cas">Case text</span>
+              </label>
+              <textarea id="case1TextInput" class="case-editor" spellcheck="true"></textarea>
+            </div>
+          </section>
+
+          <section class="setup-details case-panel" id="case2EditorPanel"><h4 data-i18n-en="Case 2" data-i18n-fr="Cas 2">Case 2</h4>
+
+            <p id="case2ArchiveOrigin" class="small-note case-origin" hidden></p>
+
+            <div class="control-group">
+              <label for="case2TitleInput">
+                <span data-i18n-en="Case title" data-i18n-fr="Titre du cas">Case title</span>
+              </label>
+              <input id="case2TitleInput" type="text" />
+            </div>
+
+            <div class="control-group">
+  <label for="case2QuestionSelect" data-i18n-en="Moderator question" data-i18n-fr="Question du modérateur">Moderator question</label>
+  <select id="case2QuestionSelect"><option value="custom" data-i18n-en="Custom question" data-i18n-fr="Question personnalisée">Custom question</option></select>
+  <div id="case2CustomQuestionWrap" class="custom-question-field"><label for="case2QuestionInput" data-i18n-en="Custom question" data-i18n-fr="Question personnalisée">Custom question</label><input id="case2QuestionInput" type="text" /></div>
+</div>
+
+            <div class="control-group">
+              <label for="case2TextInput">
+                <span data-i18n-en="Case text" data-i18n-fr="Texte du cas">Case text</span>
+              </label>
+              <textarea id="case2TextInput" class="case-editor" spellcheck="true"></textarea>
+            </div>
+          </section>
+
+</div></section></div>
         </aside>
       </div>
     </section>
 
-    <section id="matchScreen" class="screen-view match-screen" hidden>
-      <div class="arena-grid live-layout">
-        <aside class="left-rail">
-          <section class="side-card live-summary-side">
-            <div class="live-column-brand" aria-label="Site branding">
+    <section id="matchScreen" class="screen-view match-screen" hidden><div class="arena-grid live-layout"><header class="match-toolbar"><div class="live-column-brand debate-heading" aria-label="Site branding">
               <img data-logo-slot class="site-logo live-column-logo" alt="Ethics Bowl logo" hidden />
               <div data-logo-fallback class="site-logo-fallback live-column-logo-fallback">Ethics Bowl</div>
-            </div>
+            <h2 data-i18n-en="Live debate" data-i18n-fr="Débat en direct">Live debate</h2></div><div class="progress-header match-phase-header">
+                <div class="phase-copy">
+                  <div
+                    class="panel-kicker"
+                    data-i18n-en="Current phase"
+                    data-i18n-fr="Phase active"
+                  >
+                    Current phase
+                  </div>
+                  <div id="currentPhaseTitle" class="phase-title">Setup</div>
+                  <div id="currentPhaseMeta" class="phase-meta">
+                    Enter two cases and start the match.
+                  </div>
+                </div>
 
-            <div class="timer-panel">
-              <div class="panel-kicker" data-i18n-en="Current phase timer" data-i18n-fr="Minuterie de la phase actuelle">
-                Current phase timer
-              </div>
-              <div id="timerDisplay" class="timer-display">--:--</div>
-              <div id="timerHint" class="small-note">No active timed phase yet.</div>
-
-              <div id="timerControlButtons" class="button-cluster" style="margin-top:12px;">
-                <button
-                  id="pauseTimerBtn"
-                  class="secondary-btn"
-                  type="button"
-                  data-i18n-en="Pause"
-                  data-i18n-fr="Pause"
-                >
-                  Pause
-                </button>
-                <button
-                  id="resumeTimerBtn"
-                  class="secondary-btn"
-                  type="button"
-                  data-i18n-en="Resume"
-                  data-i18n-fr="Reprendre"
-                >
-                  Resume
-                </button>
-                <button
-                  id="resetTimerBtn"
-                  class="ghost-btn"
-                  type="button"
-                  data-i18n-en="Reset Phase Timer"
-                  data-i18n-fr="Réinitialiser la minuterie"
-                >
-                  Reset Phase Timer
-                </button>
-              </div>
-
-            </div>
-
-            <section id="timingTestPanel" class="progress-card timing-test-panel" hidden>
-              <div class="panel-kicker">Timing test mode</div>
-              <div id="timingTestModeNote" class="small-note timing-test-mode-note"></div>
-              <div id="timingTestResults" class="timing-test-results"></div>
-            </section>
-
-            <div class="progress-card">
-              <div
-                class="panel-kicker"
-                data-i18n-en="Match overview"
-                data-i18n-fr="Vue d’ensemble du match"
-              >
-                Match overview
-              </div>
-              <div id="matchSetupSummary" class="match-summary-grid"></div>
-
-              <div class="button-cluster" style="margin-top: 14px;">
-                <button
-                  id="newMatchBtn"
-                  class="ghost-btn"
-                  type="button"
-                  data-i18n-en="Start New Match"
-                  data-i18n-fr="Nouveau match"
-                >
-                  Start New Match
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <section class="case-reference-side" aria-label="Case reference">
-            <details id="matchCase1Card" class="match-case-card case-reference-card">
-              <summary id="matchCase1Summary">Case #1</summary>
-              <div class="match-case-body">
-                <div id="matchCase1Meta" class="phase-meta"></div>
-                <div id="matchCase1Question" class="match-case-question"></div>
-                <div id="matchCase1Text" class="match-case-text"></div>
-              </div>
-            </details>
-
-            <details id="matchCase2Card" class="match-case-card case-reference-card">
-              <summary id="matchCase2Summary">Case #2</summary>
-              <div class="match-case-body">
-                <div id="matchCase2Meta" class="phase-meta"></div>
-                <div id="matchCase2Question" class="match-case-question"></div>
-                <div id="matchCase2Text" class="match-case-text"></div>
-              </div>
-            </details>
-          </section>
-        </aside>
-
-        <main class="chat-card">
+                <div class="side-actions">
+                  <button
+                    id="nextActionBtn"
+                    class="secondary-btn"
+                    type="button"
+                    data-i18n-en="Advance / Generate"
+                    data-i18n-fr="Avancer / Générer"
+                  >
+                    Advance / Generate
+                  </button>
+                </div>
+              </div></header><main class="chat-card">
           <div id="chat" class="chat-log">
             <article id="emptyState" class="empty-state">
               <div
@@ -419,12 +282,7 @@
               >
                 No messages yet.
               </div>
-              <div
-                data-i18n-en="Enter two cases, start the match, and the moderator will guide the round."
-                data-i18n-fr="Saisissez deux cas, démarrez le match, et le modérateur guidera la ronde."
-              >
-                Enter two cases, start the match, and the moderator will guide the round.
-              </div>
+
             </article>
           </div>
 
@@ -465,46 +323,81 @@
               </button>
             </div>
           </form>
-        </main>
+        </main><aside class="right-rail"><div class="timer-panel">
 
-        <aside class="right-rail">
-          <section class="side-card tracker-side">
-            <div class="progress-card tracker-progress-card">
-              <div class="progress-header">
-                <div class="phase-copy">
-                  <div
-                    class="panel-kicker"
-                    data-i18n-en="MATCH TRACKER"
-                    data-i18n-fr="Suivi du match en direct"
-                  >
-                    MATCH TRACKER
-                  </div>
-                  <div id="currentPhaseTitle" class="phase-title">Setup</div>
-                  <div id="currentPhaseMeta" class="phase-meta">
-                    Enter two cases and start the match.
-                  </div>
-                </div>
+              <div id="timerDisplay" class="timer-display">--:--</div>
+              <div id="timerHint" class="small-note">No active timed phase yet.</div>
 
-                <div class="side-actions">
-                  <button
-                    id="nextActionBtn"
-                    class="secondary-btn"
-                    type="button"
-                    data-i18n-en="Advance / Generate"
-                    data-i18n-fr="Avancer / Générer"
-                  >
-                    Advance / Generate
-                  </button>
-                </div>
+              <div id="timerControlButtons" class="button-cluster" style="margin-top:12px;">
+                <button
+                  id="pauseTimerBtn"
+                  class="secondary-btn"
+                  type="button"
+                  data-i18n-en="Pause"
+                  data-i18n-fr="Pause"
+                >
+                  Pause
+                </button>
+                <button
+                  id="resumeTimerBtn"
+                  class="secondary-btn"
+                  type="button"
+                  data-i18n-en="Resume"
+                  data-i18n-fr="Reprendre"
+                >
+                  Resume
+                </button>
+                <button
+                  id="resetTimerBtn"
+                  class="ghost-btn"
+                  type="button"
+                  data-i18n-en="Reset timer"
+                  data-i18n-fr="Réinitialiser"
+                >
+                  Reset timer
+                </button>
               </div>
 
-              <ul id="phaseList" class="phase-list tracker-phase-list">
-                <li class="phase-item">No phases yet.</li>
-              </ul>
-            </div>
-          </section>
+            </div><section class="live-summary-side"><div class="progress-card">
+              <div
+                class="panel-kicker"
+                data-i18n-en="Match overview"
+                data-i18n-fr="Vue d’ensemble du match"
+              >
+                Match overview
+              </div>
+              <div id="matchSetupSummary" class="match-summary-grid"></div>
 
-          <section class="side-card judge-side">
+              <div class="button-cluster" style="margin-top: 14px;">
+                <button
+                  id="newMatchBtn"
+                  class="ghost-btn"
+                  type="button"
+                  data-i18n-en="New match"
+                  data-i18n-fr="Nouveau match"
+                >
+                  New match
+                </button>
+              </div>
+            </div></section><section class="case-reference-side" aria-label="Case reference">
+            <details id="matchCase1Card" class="match-case-card case-reference-card">
+              <summary id="matchCase1Summary">Case #1</summary>
+              <div class="match-case-body">
+                <div id="matchCase1Meta" class="phase-meta"></div>
+                <div id="matchCase1Question" class="match-case-question"></div>
+                <div id="matchCase1Text" class="match-case-text"></div>
+              </div>
+            </details>
+
+            <details id="matchCase2Card" class="match-case-card case-reference-card">
+              <summary id="matchCase2Summary">Case #2</summary>
+              <div class="match-case-body">
+                <div id="matchCase2Meta" class="phase-meta"></div>
+                <div id="matchCase2Question" class="match-case-question"></div>
+                <div id="matchCase2Text" class="match-case-text"></div>
+              </div>
+            </details>
+          </section><section class="side-card judge-side">
             <div id="judgePanelDefault" class="judge-panel-default">
               <h2 data-i18n-en="Judges" data-i18n-fr="Juges">Judges</h2>
 
@@ -513,13 +406,7 @@
                   <div class="phase-title" style="margin-bottom: 8px;" data-i18n-en="AI judges active" data-i18n-fr="Juges IA actifs">
                     AI judges active
                   </div>
-                  <div
-                    class="small-note"
-                    data-i18n-en="Three AI judges will ask one question each during each judge period and generate final scorecards at the end."
-                    data-i18n-fr="Trois juges IA poseront une question chacun pendant chaque période des juges et produiront les fiches finales à la fin."
-                  >
-                    Three AI judges will ask one question each during each judge period and generate final scorecards at the end.
-                  </div>
+
                 </div>
               </div>
 
@@ -528,13 +415,7 @@
                   <div class="status-chip active" data-i18n-en="Human judges active" data-i18n-fr="Juges humains actifs">
                     Human judges active
                   </div>
-                  <div
-                    class="small-note"
-                    data-i18n-en="During each judge-question phase, enter the active judge’s question and click the button for that judge. At the end, enter the three judges’ scores to compute the result."
-                    data-i18n-fr="Pendant chaque phase de question des juges, entrez la question du juge actif et cliquez sur le bouton de ce juge. À la fin, entrez les notes des trois juges pour calculer le résultat."
-                  >
-                    During each judge-question phase, enter the active judge’s question and click the button for that judge. At the end, enter the three judges’ scores to compute the result.
-                  </div>
+
                 </div>
 
                 <div class="judge-entry">
@@ -549,22 +430,8 @@
                     </label>
                     <textarea id="judge1Question"></textarea>
                   </div>
-                  <div class="score-row">
-                    <label>
-                      <span class="participant-one-score-label">Participant 1</span> /60
-                      <input id="judge1HumanScore" type="number" min="0" max="60" step="1" />
-                    </label>
-                    <label>
-                      <span class="participant-two-score-label">Participant 2</span> /60
-                      <input id="judge1AiScore" type="number" min="0" max="60" step="1" />
-                    </label>
-                  </div>
-                  <div class="control-group">
-                    <label for="judge1Comment">
-                      <span data-i18n-en="Comment" data-i18n-fr="Commentaire">Comment</span>
-                    </label>
-                    <textarea id="judge1Comment"></textarea>
-                  </div>
+                  <table class="human-score-grid"><thead><tr><th data-i18n-en="Criterion" data-i18n-fr="Critère">Criterion</th><th id="judge1-human-heading" class="participant-one-score-label">Participant 1</th><th id="judge1-ai-heading" class="participant-two-score-label">Participant 2</th></tr></thead><tbody><tr><th id="judge1-presentationQuestion-label" scope="row" data-i18n-en="Clarity & systematicity" data-i18n-fr="Clarté et cohérence">Clarity & systematicity</th><td><input id="judge1Human-presentationQuestion" aria-labelledby="judge1-human-heading judge1-presentationQuestion-label" type="number" min="0" max="5" step="1" aria-label="Judge 1, Participant 1: Clarity & systematicity, out of 5" /></td><td><input id="judge1Ai-presentationQuestion" aria-labelledby="judge1-ai-heading judge1-presentationQuestion-label" type="number" min="0" max="5" step="1" aria-label="Judge 1, Participant 2: Clarity & systematicity, out of 5" /></td></tr><tr><th id="judge1-presentationEthics-label" scope="row" data-i18n-en="Moral dimensions" data-i18n-fr="Dimensions morales">Moral dimensions</th><td><input id="judge1Human-presentationEthics" aria-labelledby="judge1-human-heading judge1-presentationEthics-label" type="number" min="0" max="5" step="1" aria-label="Judge 1, Participant 1: Moral dimensions, out of 5" /></td><td><input id="judge1Ai-presentationEthics" aria-labelledby="judge1-ai-heading judge1-presentationEthics-label" type="number" min="0" max="5" step="1" aria-label="Judge 1, Participant 2: Moral dimensions, out of 5" /></td></tr><tr><th id="judge1-presentationViewpoints-label" scope="row" data-i18n-en="Conflicting viewpoints" data-i18n-fr="Points de vue divergents">Conflicting viewpoints</th><td><input id="judge1Human-presentationViewpoints" aria-labelledby="judge1-human-heading judge1-presentationViewpoints-label" type="number" min="0" max="5" step="1" aria-label="Judge 1, Participant 1: Conflicting viewpoints, out of 5" /></td><td><input id="judge1Ai-presentationViewpoints" aria-labelledby="judge1-ai-heading judge1-presentationViewpoints-label" type="number" min="0" max="5" step="1" aria-label="Judge 1, Participant 2: Conflicting viewpoints, out of 5" /></td></tr><tr><th id="judge1-responseToFeedback-label" scope="row" data-i18n-en="Response to commentary" data-i18n-fr="Réponse aux commentaires">Response to commentary</th><td><input id="judge1Human-responseToFeedback" aria-labelledby="judge1-human-heading judge1-responseToFeedback-label" type="number" min="0" max="10" step="1" aria-label="Judge 1, Participant 1: Response to commentary, out of 10" /></td><td><input id="judge1Ai-responseToFeedback" aria-labelledby="judge1-ai-heading judge1-responseToFeedback-label" type="number" min="0" max="10" step="1" aria-label="Judge 1, Participant 2: Response to commentary, out of 10" /></td></tr><tr><th id="judge1-judgesQuestions-label" scope="row" data-i18n-en="Judges’ questions" data-i18n-fr="Questions des juges">Judges’ questions</th><td><input id="judge1Human-judgesQuestions" aria-labelledby="judge1-human-heading judge1-judgesQuestions-label" type="number" min="0" max="20" step="1" aria-label="Judge 1, Participant 1: Judges’ questions, out of 20" /></td><td><input id="judge1Ai-judgesQuestions" aria-labelledby="judge1-ai-heading judge1-judgesQuestions-label" type="number" min="0" max="20" step="1" aria-label="Judge 1, Participant 2: Judges’ questions, out of 20" /></td></tr><tr><th id="judge1-commentary-label" scope="row" data-i18n-en="Commentary" data-i18n-fr="Commentaire">Commentary</th><td><input id="judge1Human-commentary" aria-labelledby="judge1-human-heading judge1-commentary-label" type="number" min="0" max="10" step="1" aria-label="Judge 1, Participant 1: Commentary, out of 10" /></td><td><input id="judge1Ai-commentary" aria-labelledby="judge1-ai-heading judge1-commentary-label" type="number" min="0" max="10" step="1" aria-label="Judge 1, Participant 2: Commentary, out of 10" /></td></tr><tr><th id="judge1-respectfulDialogue-label" scope="row" data-i18n-en="Respectful dialogue" data-i18n-fr="Dialogue respectueux">Respectful dialogue</th><td><input id="judge1Human-respectfulDialogue" aria-labelledby="judge1-human-heading judge1-respectfulDialogue-label" type="number" min="0" max="5" step="1" aria-label="Judge 1, Participant 1: Respectful dialogue, out of 5" /></td><td><input id="judge1Ai-respectfulDialogue" aria-labelledby="judge1-ai-heading judge1-respectfulDialogue-label" type="number" min="0" max="5" step="1" aria-label="Judge 1, Participant 2: Respectful dialogue, out of 5" /></td></tr></tbody><tfoot><tr><th data-i18n-en="Total /60" data-i18n-fr="Total /60">Total /60</th><td><input id="judge1HumanScore" type="number" readonly aria-label="Participant 1 total out of 60" /></td><td><input id="judge1AiScore" type="number" readonly aria-label="Participant 2 total out of 60" /></td></tr></tfoot></table>
+                  <fieldset class="judge-entry-team"><legend class="participant-one-score-label">Participant 1</legend><div class="control-group"><label for="judge1HumanDidWell" data-i18n-en="What the team did well" data-i18n-fr="Ce que l’équipe a bien fait">What the team did well</label><textarea id="judge1HumanDidWell"></textarea></div><div class="control-group"><label for="judge1HumanNeedsImprovement" data-i18n-en="What needs improvement" data-i18n-fr="Ce qui doit être amélioré">What needs improvement</label><textarea id="judge1HumanNeedsImprovement"></textarea></div></fieldset><fieldset class="judge-entry-team"><legend class="participant-two-score-label">Participant 2</legend><div class="control-group"><label for="judge1AiDidWell" data-i18n-en="What the team did well" data-i18n-fr="Ce que l’équipe a bien fait">What the team did well</label><textarea id="judge1AiDidWell"></textarea></div><div class="control-group"><label for="judge1AiNeedsImprovement" data-i18n-en="What needs improvement" data-i18n-fr="Ce qui doit être amélioré">What needs improvement</label><textarea id="judge1AiNeedsImprovement"></textarea></div></fieldset>
                 </div>
 
                 <div class="judge-entry">
@@ -579,22 +446,8 @@
                     </label>
                     <textarea id="judge2Question"></textarea>
                   </div>
-                  <div class="score-row">
-                    <label>
-                      <span class="participant-one-score-label">Participant 1</span> /60
-                      <input id="judge2HumanScore" type="number" min="0" max="60" step="1" />
-                    </label>
-                    <label>
-                      <span class="participant-two-score-label">Participant 2</span> /60
-                      <input id="judge2AiScore" type="number" min="0" max="60" step="1" />
-                    </label>
-                  </div>
-                  <div class="control-group">
-                    <label for="judge2Comment">
-                      <span data-i18n-en="Comment" data-i18n-fr="Commentaire">Comment</span>
-                    </label>
-                    <textarea id="judge2Comment"></textarea>
-                  </div>
+                  <table class="human-score-grid"><thead><tr><th data-i18n-en="Criterion" data-i18n-fr="Critère">Criterion</th><th id="judge2-human-heading" class="participant-one-score-label">Participant 1</th><th id="judge2-ai-heading" class="participant-two-score-label">Participant 2</th></tr></thead><tbody><tr><th id="judge2-presentationQuestion-label" scope="row" data-i18n-en="Clarity & systematicity" data-i18n-fr="Clarté et cohérence">Clarity & systematicity</th><td><input id="judge2Human-presentationQuestion" aria-labelledby="judge2-human-heading judge2-presentationQuestion-label" type="number" min="0" max="5" step="1" aria-label="Judge 2, Participant 1: Clarity & systematicity, out of 5" /></td><td><input id="judge2Ai-presentationQuestion" aria-labelledby="judge2-ai-heading judge2-presentationQuestion-label" type="number" min="0" max="5" step="1" aria-label="Judge 2, Participant 2: Clarity & systematicity, out of 5" /></td></tr><tr><th id="judge2-presentationEthics-label" scope="row" data-i18n-en="Moral dimensions" data-i18n-fr="Dimensions morales">Moral dimensions</th><td><input id="judge2Human-presentationEthics" aria-labelledby="judge2-human-heading judge2-presentationEthics-label" type="number" min="0" max="5" step="1" aria-label="Judge 2, Participant 1: Moral dimensions, out of 5" /></td><td><input id="judge2Ai-presentationEthics" aria-labelledby="judge2-ai-heading judge2-presentationEthics-label" type="number" min="0" max="5" step="1" aria-label="Judge 2, Participant 2: Moral dimensions, out of 5" /></td></tr><tr><th id="judge2-presentationViewpoints-label" scope="row" data-i18n-en="Conflicting viewpoints" data-i18n-fr="Points de vue divergents">Conflicting viewpoints</th><td><input id="judge2Human-presentationViewpoints" aria-labelledby="judge2-human-heading judge2-presentationViewpoints-label" type="number" min="0" max="5" step="1" aria-label="Judge 2, Participant 1: Conflicting viewpoints, out of 5" /></td><td><input id="judge2Ai-presentationViewpoints" aria-labelledby="judge2-ai-heading judge2-presentationViewpoints-label" type="number" min="0" max="5" step="1" aria-label="Judge 2, Participant 2: Conflicting viewpoints, out of 5" /></td></tr><tr><th id="judge2-responseToFeedback-label" scope="row" data-i18n-en="Response to commentary" data-i18n-fr="Réponse aux commentaires">Response to commentary</th><td><input id="judge2Human-responseToFeedback" aria-labelledby="judge2-human-heading judge2-responseToFeedback-label" type="number" min="0" max="10" step="1" aria-label="Judge 2, Participant 1: Response to commentary, out of 10" /></td><td><input id="judge2Ai-responseToFeedback" aria-labelledby="judge2-ai-heading judge2-responseToFeedback-label" type="number" min="0" max="10" step="1" aria-label="Judge 2, Participant 2: Response to commentary, out of 10" /></td></tr><tr><th id="judge2-judgesQuestions-label" scope="row" data-i18n-en="Judges’ questions" data-i18n-fr="Questions des juges">Judges’ questions</th><td><input id="judge2Human-judgesQuestions" aria-labelledby="judge2-human-heading judge2-judgesQuestions-label" type="number" min="0" max="20" step="1" aria-label="Judge 2, Participant 1: Judges’ questions, out of 20" /></td><td><input id="judge2Ai-judgesQuestions" aria-labelledby="judge2-ai-heading judge2-judgesQuestions-label" type="number" min="0" max="20" step="1" aria-label="Judge 2, Participant 2: Judges’ questions, out of 20" /></td></tr><tr><th id="judge2-commentary-label" scope="row" data-i18n-en="Commentary" data-i18n-fr="Commentaire">Commentary</th><td><input id="judge2Human-commentary" aria-labelledby="judge2-human-heading judge2-commentary-label" type="number" min="0" max="10" step="1" aria-label="Judge 2, Participant 1: Commentary, out of 10" /></td><td><input id="judge2Ai-commentary" aria-labelledby="judge2-ai-heading judge2-commentary-label" type="number" min="0" max="10" step="1" aria-label="Judge 2, Participant 2: Commentary, out of 10" /></td></tr><tr><th id="judge2-respectfulDialogue-label" scope="row" data-i18n-en="Respectful dialogue" data-i18n-fr="Dialogue respectueux">Respectful dialogue</th><td><input id="judge2Human-respectfulDialogue" aria-labelledby="judge2-human-heading judge2-respectfulDialogue-label" type="number" min="0" max="5" step="1" aria-label="Judge 2, Participant 1: Respectful dialogue, out of 5" /></td><td><input id="judge2Ai-respectfulDialogue" aria-labelledby="judge2-ai-heading judge2-respectfulDialogue-label" type="number" min="0" max="5" step="1" aria-label="Judge 2, Participant 2: Respectful dialogue, out of 5" /></td></tr></tbody><tfoot><tr><th data-i18n-en="Total /60" data-i18n-fr="Total /60">Total /60</th><td><input id="judge2HumanScore" type="number" readonly aria-label="Participant 1 total out of 60" /></td><td><input id="judge2AiScore" type="number" readonly aria-label="Participant 2 total out of 60" /></td></tr></tfoot></table>
+                  <fieldset class="judge-entry-team"><legend class="participant-one-score-label">Participant 1</legend><div class="control-group"><label for="judge2HumanDidWell" data-i18n-en="What the team did well" data-i18n-fr="Ce que l’équipe a bien fait">What the team did well</label><textarea id="judge2HumanDidWell"></textarea></div><div class="control-group"><label for="judge2HumanNeedsImprovement" data-i18n-en="What needs improvement" data-i18n-fr="Ce qui doit être amélioré">What needs improvement</label><textarea id="judge2HumanNeedsImprovement"></textarea></div></fieldset><fieldset class="judge-entry-team"><legend class="participant-two-score-label">Participant 2</legend><div class="control-group"><label for="judge2AiDidWell" data-i18n-en="What the team did well" data-i18n-fr="Ce que l’équipe a bien fait">What the team did well</label><textarea id="judge2AiDidWell"></textarea></div><div class="control-group"><label for="judge2AiNeedsImprovement" data-i18n-en="What needs improvement" data-i18n-fr="Ce qui doit être amélioré">What needs improvement</label><textarea id="judge2AiNeedsImprovement"></textarea></div></fieldset>
                 </div>
 
                 <div class="judge-entry">
@@ -609,22 +462,8 @@
                     </label>
                     <textarea id="judge3Question"></textarea>
                   </div>
-                  <div class="score-row">
-                    <label>
-                      <span class="participant-one-score-label">Participant 1</span> /60
-                      <input id="judge3HumanScore" type="number" min="0" max="60" step="1" />
-                    </label>
-                    <label>
-                      <span class="participant-two-score-label">Participant 2</span> /60
-                      <input id="judge3AiScore" type="number" min="0" max="60" step="1" />
-                    </label>
-                  </div>
-                  <div class="control-group">
-                    <label for="judge3Comment">
-                      <span data-i18n-en="Comment" data-i18n-fr="Commentaire">Comment</span>
-                    </label>
-                    <textarea id="judge3Comment"></textarea>
-                  </div>
+                  <table class="human-score-grid"><thead><tr><th data-i18n-en="Criterion" data-i18n-fr="Critère">Criterion</th><th id="judge3-human-heading" class="participant-one-score-label">Participant 1</th><th id="judge3-ai-heading" class="participant-two-score-label">Participant 2</th></tr></thead><tbody><tr><th id="judge3-presentationQuestion-label" scope="row" data-i18n-en="Clarity & systematicity" data-i18n-fr="Clarté et cohérence">Clarity & systematicity</th><td><input id="judge3Human-presentationQuestion" aria-labelledby="judge3-human-heading judge3-presentationQuestion-label" type="number" min="0" max="5" step="1" aria-label="Judge 3, Participant 1: Clarity & systematicity, out of 5" /></td><td><input id="judge3Ai-presentationQuestion" aria-labelledby="judge3-ai-heading judge3-presentationQuestion-label" type="number" min="0" max="5" step="1" aria-label="Judge 3, Participant 2: Clarity & systematicity, out of 5" /></td></tr><tr><th id="judge3-presentationEthics-label" scope="row" data-i18n-en="Moral dimensions" data-i18n-fr="Dimensions morales">Moral dimensions</th><td><input id="judge3Human-presentationEthics" aria-labelledby="judge3-human-heading judge3-presentationEthics-label" type="number" min="0" max="5" step="1" aria-label="Judge 3, Participant 1: Moral dimensions, out of 5" /></td><td><input id="judge3Ai-presentationEthics" aria-labelledby="judge3-ai-heading judge3-presentationEthics-label" type="number" min="0" max="5" step="1" aria-label="Judge 3, Participant 2: Moral dimensions, out of 5" /></td></tr><tr><th id="judge3-presentationViewpoints-label" scope="row" data-i18n-en="Conflicting viewpoints" data-i18n-fr="Points de vue divergents">Conflicting viewpoints</th><td><input id="judge3Human-presentationViewpoints" aria-labelledby="judge3-human-heading judge3-presentationViewpoints-label" type="number" min="0" max="5" step="1" aria-label="Judge 3, Participant 1: Conflicting viewpoints, out of 5" /></td><td><input id="judge3Ai-presentationViewpoints" aria-labelledby="judge3-ai-heading judge3-presentationViewpoints-label" type="number" min="0" max="5" step="1" aria-label="Judge 3, Participant 2: Conflicting viewpoints, out of 5" /></td></tr><tr><th id="judge3-responseToFeedback-label" scope="row" data-i18n-en="Response to commentary" data-i18n-fr="Réponse aux commentaires">Response to commentary</th><td><input id="judge3Human-responseToFeedback" aria-labelledby="judge3-human-heading judge3-responseToFeedback-label" type="number" min="0" max="10" step="1" aria-label="Judge 3, Participant 1: Response to commentary, out of 10" /></td><td><input id="judge3Ai-responseToFeedback" aria-labelledby="judge3-ai-heading judge3-responseToFeedback-label" type="number" min="0" max="10" step="1" aria-label="Judge 3, Participant 2: Response to commentary, out of 10" /></td></tr><tr><th id="judge3-judgesQuestions-label" scope="row" data-i18n-en="Judges’ questions" data-i18n-fr="Questions des juges">Judges’ questions</th><td><input id="judge3Human-judgesQuestions" aria-labelledby="judge3-human-heading judge3-judgesQuestions-label" type="number" min="0" max="20" step="1" aria-label="Judge 3, Participant 1: Judges’ questions, out of 20" /></td><td><input id="judge3Ai-judgesQuestions" aria-labelledby="judge3-ai-heading judge3-judgesQuestions-label" type="number" min="0" max="20" step="1" aria-label="Judge 3, Participant 2: Judges’ questions, out of 20" /></td></tr><tr><th id="judge3-commentary-label" scope="row" data-i18n-en="Commentary" data-i18n-fr="Commentaire">Commentary</th><td><input id="judge3Human-commentary" aria-labelledby="judge3-human-heading judge3-commentary-label" type="number" min="0" max="10" step="1" aria-label="Judge 3, Participant 1: Commentary, out of 10" /></td><td><input id="judge3Ai-commentary" aria-labelledby="judge3-ai-heading judge3-commentary-label" type="number" min="0" max="10" step="1" aria-label="Judge 3, Participant 2: Commentary, out of 10" /></td></tr><tr><th id="judge3-respectfulDialogue-label" scope="row" data-i18n-en="Respectful dialogue" data-i18n-fr="Dialogue respectueux">Respectful dialogue</th><td><input id="judge3Human-respectfulDialogue" aria-labelledby="judge3-human-heading judge3-respectfulDialogue-label" type="number" min="0" max="5" step="1" aria-label="Judge 3, Participant 1: Respectful dialogue, out of 5" /></td><td><input id="judge3Ai-respectfulDialogue" aria-labelledby="judge3-ai-heading judge3-respectfulDialogue-label" type="number" min="0" max="5" step="1" aria-label="Judge 3, Participant 2: Respectful dialogue, out of 5" /></td></tr></tbody><tfoot><tr><th data-i18n-en="Total /60" data-i18n-fr="Total /60">Total /60</th><td><input id="judge3HumanScore" type="number" readonly aria-label="Participant 1 total out of 60" /></td><td><input id="judge3AiScore" type="number" readonly aria-label="Participant 2 total out of 60" /></td></tr></tfoot></table>
+                  <fieldset class="judge-entry-team"><legend class="participant-one-score-label">Participant 1</legend><div class="control-group"><label for="judge3HumanDidWell" data-i18n-en="What the team did well" data-i18n-fr="Ce que l’équipe a bien fait">What the team did well</label><textarea id="judge3HumanDidWell"></textarea></div><div class="control-group"><label for="judge3HumanNeedsImprovement" data-i18n-en="What needs improvement" data-i18n-fr="Ce qui doit être amélioré">What needs improvement</label><textarea id="judge3HumanNeedsImprovement"></textarea></div></fieldset><fieldset class="judge-entry-team"><legend class="participant-two-score-label">Participant 2</legend><div class="control-group"><label for="judge3AiDidWell" data-i18n-en="What the team did well" data-i18n-fr="Ce que l’équipe a bien fait">What the team did well</label><textarea id="judge3AiDidWell"></textarea></div><div class="control-group"><label for="judge3AiNeedsImprovement" data-i18n-en="What needs improvement" data-i18n-fr="Ce qui doit être amélioré">What needs improvement</label><textarea id="judge3AiNeedsImprovement"></textarea></div></fieldset>
                 </div>
 
                 <div class="button-cluster" style="margin-top:12px;">
@@ -644,7 +483,7 @@
                 <div class="panel-kicker" data-i18n-en="Scoreboard" data-i18n-fr="Tableau des résultats">
                   Scoreboard
                 </div>
-                <div id="scoreSummary" class="score-note">No scores yet.</div>
+                <div id="scoreSummary" class="score-note"></div>
                 <div id="scoreCards" class="score-cards"></div>
               </div>
             </div>
@@ -719,17 +558,56 @@
                 </div>
               </div>
             </div>
-          </section>
-        </aside>
-      </div>
-    </section>
+          </section><details class="match-progress"><summary data-i18n-en="Match progress" data-i18n-fr="Progression du match">Match progress</summary><ul id="phaseList" class="phase-list tracker-phase-list">
+                <li class="phase-item">No phases yet.</li>
+              </ul></details></aside><section id="timingTestPanel" class="progress-card timing-test-panel" hidden>
+              <div class="panel-kicker">Timing test mode</div>
+              <div id="timingTestModeNote" class="small-note timing-test-mode-note"></div>
+              <div id="timingTestResults" class="timing-test-results"></div>
+            </section></div></section>
   </div>
 
+
+  <script src="src/shared/case-archive-data.js"></script>
+  <script src="src/shared/case-packet.js"></script>
+  <script src="src/shared/case-archive.js"></script>
   <script src="src/shared/model-catalog.js"></script>
   <script src="src/shared/ai-turn-prompt.js"></script>
+  <script src="src/shared/ethics-bowl-rubric.js"></script>
   <script src="src/shared/phase-timer-policy.js"></script>
   <script src="src/shared/speech-timing.js"></script>
+  <script src="src/shared/word-alignment.js"></script>
+  <script src="src/shared/speech-delivery.js"></script>
   <script src="src/shared/scorecard-tally.js"></script>
+  <script src="src/shared/composer-status.js"></script>
+  <script src="src/shared/match-session.js"></script>
+  <script src="src/shared/match-phases.js"></script>
+  <script src="src/shared/transcript-context.js"></script>
+  <script src="src/shared/audio-pcm.js"></script>
+  <script src="src/shared/final-scoring.js"></script>
+  <script src="src/renderer/locale.js"></script>
+  <script src="src/renderer/credentials.js"></script>
+  <script src="src/renderer/setup.js"></script>
+  <script src="src/renderer/transcript.js"></script>
+  <script src="src/renderer/speech.js"></script>
+  <script src="src/renderer/speech-view.js"></script>
+  <script src="src/renderer/speech-callbacks.js"></script>
+  <script src="src/renderer/timing.js"></script>
+  <script src="src/renderer/model-client.js"></script>
+  <script src="src/renderer/context.js"></script>
+  <script src="src/renderer/prompts.js"></script>
+  <script src="src/renderer/turns.js"></script>
+  <script src="src/renderer/questions.js"></script>
+  <script src="src/renderer/scoring.js"></script>
+  <script src="src/renderer/score-format.js"></script>
+  <script src="src/renderer/scorecards.js"></script>
+  <script src="src/renderer/composer.js"></script>
+  <script src="src/renderer/pending-submission.js"></script>
+  <script src="src/renderer/voice.js"></script>
+  <script src="src/renderer/match.js"></script>
+  <script src="src/renderer/phase-access.js"></script>
+  <script src="src/renderer/coin-choice.js"></script>
+  <script src="src/renderer/timer.js"></script>
   <script>
     (function () {
       const script = document.createElement("script");

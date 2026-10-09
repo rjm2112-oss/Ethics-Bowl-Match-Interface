@@ -1,0 +1,29 @@
+{
+  "originalText": "A calm humanlike voice.",
+  "durationSeconds": 50.76,
+  "recognition": {
+    "text": "A calm human-like voice.",
+    "words": [
+      {
+        "word": "A",
+        "start": 0,
+        "end": 0.47999998927116394
+      },
+      {
+        "word": "calm",
+        "start": 0.47999998927116394,
+        "end": 0.8199999928474426
+      },
+      {
+        "word": "human-like",
+        "start": 0.8199999928474426,
+        "end": 1.2000000476837158
+      },
+      {
+        "word": "voice.",
+        "start": 1.2000000476837158,
+        "end": 1.399999976158142
+      }
+    ]
+  }
+}

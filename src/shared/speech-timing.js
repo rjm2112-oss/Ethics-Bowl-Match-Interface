@@ -40,6 +40,7 @@
         audioDurationSeconds = 0,
         timerLeadMs = 0,
         timerBudgetSeconds = 0,
+        playbackReserveSeconds = 3,
         minimumPlaybackRate = 0.924,
         maximumPlaybackRate = 1.09
     } = {}) {
@@ -54,24 +55,32 @@
         const maximumRate = Number.isFinite(requestedMaximum) && requestedMaximum >= minimumRate
             ? requestedMaximum
             : Math.max(minimumRate, 1.09);
-        const availablePlaybackSeconds = Math.max(0, budgetSeconds - leadSeconds);
+        // Saved Linux null-sink playback stalls for ~2 seconds after idle even
+        // after the playing event. Reserve observed output startup/event overhead
+        // separately from the deliberate timer lead; never change word targets.
+        const reserveSeconds = finiteNonNegative(playbackReserveSeconds);
+        const availablePlaybackSeconds = Math.max(0, budgetSeconds - leadSeconds - reserveSeconds);
         const rawPlaybackRate = audioSeconds > 0 && availablePlaybackSeconds > 0
             ? audioSeconds / availablePlaybackSeconds
             : 1;
         const playbackRate = Math.min(maximumRate, Math.max(minimumRate, rawPlaybackRate));
         const projectedPlaybackSeconds = audioSeconds > 0 ? audioSeconds / playbackRate : 0;
-        const projectedTimerConsumedSeconds = leadSeconds + projectedPlaybackSeconds;
+        const projectedPlaybackAndLeadSeconds = leadSeconds + projectedPlaybackSeconds;
+        const projectedTimerConsumedSeconds = projectedPlaybackAndLeadSeconds + reserveSeconds;
 
         return Object.freeze({
             audioDurationSeconds: audioSeconds,
             timerLeadSeconds: leadSeconds,
             timerBudgetSeconds: budgetSeconds,
             availablePlaybackSeconds,
+            playbackReserveSeconds: reserveSeconds,
             minimumPlaybackRate: minimumRate,
             maximumPlaybackRate: maximumRate,
             rawPlaybackRate,
             playbackRate,
             projectedPlaybackSeconds,
+            projectedPlaybackAndLeadSeconds,
+            projectedUnreservedMarginSeconds: budgetSeconds - projectedPlaybackAndLeadSeconds,
             projectedTimerConsumedSeconds,
             projectedSignedRemainingSeconds: budgetSeconds - projectedTimerConsumedSeconds
         });

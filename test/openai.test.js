@@ -18,11 +18,11 @@ function jsonResponse(body, init = {}) {
 
 function textRequest(overrides = {}) {
     return {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         systemPrompt: "Follow the match rules.",
         userPrompt: "Make an argument.",
         maxTokens: 800,
-        reasoningEffort: "medium",
+        reasoningEffort: "high",
         jsonSchema: null,
         ...overrides
     };
@@ -33,7 +33,7 @@ test("OpenAI Responses uses instructions, reasoning, and extracts text", async (
     const adapter = createOpenAiAdapter({
         fetchImpl: async (url, options) => {
             captured = { url, options };
-            return jsonResponse({ output: [{ content: [{ type: "output_text", text: "A clear response." }] }] });
+            return jsonResponse({ status: "completed", output: [{ content: [{ type: "output_text", text: "A clear response." }] }] });
         },
         sleep: async () => {}
     });
@@ -42,11 +42,11 @@ test("OpenAI Responses uses instructions, reasoning, and extracts text", async (
     assert.equal(captured.url, RESPONSES_URL);
     assert.equal(captured.options.headers.Authorization, "Bearer openai-test-value");
     assert.deepEqual(JSON.parse(captured.options.body), {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         input: "Make an argument.",
         max_output_tokens: 800,
         instructions: "Follow the match rules.",
-        reasoning: { effort: "medium" }
+        reasoning: { effort: "high" }
     });
 });
 
@@ -55,7 +55,7 @@ test("OpenAI Responses parses structured JSON and preserves the requested schema
     const adapter = createOpenAiAdapter({
         fetchImpl: async (_url, options) => {
             body = JSON.parse(options.body);
-            return jsonResponse({ output_text: '{"score":42}' });
+            return jsonResponse({ status: "completed", output_text: '{"score":42}' });
         },
         sleep: async () => {}
     });
@@ -83,7 +83,7 @@ test("OpenAI Responses retries transient statuses and replaces a partial output-
                 incomplete_details: { reason: "max_output_tokens" },
                 output_text: "This fragment must not be returned"
             });
-            return jsonResponse({ output_text: "Recovered." });
+            return jsonResponse({ status: "completed", output_text: "Recovered." });
         },
         sleep: async (delay) => delays.push(delay)
     });
@@ -92,7 +92,7 @@ test("OpenAI Responses retries transient statuses and replaces a partial output-
     assert.equal(call, 3);
     assert.deepEqual(delays, [0]);
     assert.equal(bodies[2].max_output_tokens, 2000);
-    assert.deepEqual(bodies[2].reasoning, { effort: "medium" });
+    assert.deepEqual(bodies[2].reasoning, { effort: "high" });
 });
 
 test("OpenAI Responses rejects a second incomplete response instead of exposing partial text", async () => {
@@ -207,7 +207,7 @@ test("OpenAI speech retries one timed-out request", async () => {
     });
 
     const result = await adapter.speech({
-        model: "tts-1-hd",
+        model: "gpt-4o-mini-tts",
         voice: "alloy",
         input: "Retry this timed-out speech chunk.",
         responseFormat: "mp3"
@@ -255,7 +255,7 @@ test("OpenAI transcription sends native multipart data with the final transcript
         sleep: async () => {}
     });
     const result = await adapter.transcribe({
-        model: "gpt-4o-transcribe",
+        model: "gpt-transcribe",
         bytes: new Uint8Array([1, 2, 3]),
         mimeType: "audio/webm",
         fileName: "preview.webm",
@@ -266,8 +266,8 @@ test("OpenAI transcription sends native multipart data with the final transcript
     assert.deepEqual(result, { text: "Recorded argument." });
     assert.equal(captured.url, TRANSCRIPTIONS_URL);
     assert.equal(captured.options.headers.Authorization, "Bearer openai-test-value");
-    assert.equal(captured.options.body.get("model"), "gpt-4o-transcribe");
-    assert.equal(captured.options.body.get("language"), "en");
+    assert.equal(captured.options.body.get("model"), "gpt-transcribe");
+    assert.equal(captured.options.body.get("languages[]"), "en");
     assert.equal(captured.options.body.get("prompt"), "Ethics Bowl");
     assert.equal(captured.options.body.get("file").name, "preview.webm");
 });
@@ -286,4 +286,20 @@ test("OpenAI requests fail clearly when the provider stalls", async () => {
     });
 
     await assert.rejects(adapter.generate(textRequest({ requestTimeoutMs: 5 }), "openai-test-value"), /timed out/);
+});
+
+test("OpenAI accepts only completed responses, never partial text or JSON from another status",async()=>{
+ for(const status of ["incomplete","failed","cancelled","in_progress","queued","unexpected",undefined]){
+  let calls=0;const adapter=createOpenAiAdapter({fetchImpl:async()=>{calls++;return jsonResponse({status,incomplete_details:status==="incomplete"?{reason:"content_filter"}:undefined,output_text:'{"score":42}'});},sleep:async()=>{}});
+  for(const jsonSchema of [null,{name:"score",schema:{type:"object"}}])await assert.rejects(adapter.generate(textRequest({jsonSchema}),"test-key"),/Partial text was not accepted/);
+  assert.equal(calls,2);
+ }
+});
+
+test("OpenAI does not retry cancelled/failed results or an already maximal output budget",async()=>{
+ for(const status of ["cancelled","failed","incomplete"]){let calls=0;const adapter=createOpenAiAdapter({fetchImpl:async()=>{calls++;return jsonResponse({status,incomplete_details:{reason:"max_output_tokens"},output_text:"partial"});},sleep:async()=>{}});await assert.rejects(adapter.generate(textRequest({maxTokens:32768}),"test-key"),/output-token budget/);assert.equal(calls,1);}
+});
+
+test('OpenAI completed refusals are surfaced as failures',async()=>{
+ const adapter=createOpenAiAdapter({fetchImpl:async()=>jsonResponse({status:'completed',output:[{content:[{type:'refusal',refusal:'Unable to comply'}]}]}),sleep:async()=>{}});await assert.rejects(adapter.generate(textRequest(),'test-key'),/refused this request/);
 });
