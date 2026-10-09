@@ -132,15 +132,31 @@
     // Text layout has no timestamps and never authorizes speech delivery.
     function restoreParagraphs(preview,text,locale="en") {
         if(!String(preview).includes("\n") || !text)return text;
-        const words=Array.from(text.matchAll(/\S+/gu)).filter(token=>clean(token[0]))
-            .map(token=>({startChar:token.index,endChar:token.index+token[0].length}));
-        const mapped=mapTextRanges(preview,text,words,locale),breaks=[];
-        let previousEnd=0;
-        mapped.forEach((range,index)=>{
-            if(!range)return;
-            if(index>0 && /\n/.test(preview.slice(previousEnd,range.startChar)))breaks.push(words[index].startChar);
-            previousEnd=range.endChar;
-        });
+        const tokens=value=>Array.from(value.matchAll(/\S+/gu)).filter(token=>clean(token[0]));
+        const original=tokens(preview),words=tokens(text),keys=words.map(token=>clean(token[0])),breaks=[];
+        const uniqueAnchor=(from,to,offset)=>{
+            const anchor=original.slice(from,to).map(token=>clean(token[0]));
+            if(anchor.length<2)return -1;
+            let found=-1;
+            for(let index=0;index<=keys.length-anchor.length;index++){
+                if(!anchor.every((key,n)=>key===keys[index+n]))continue;
+                if(found>=0)return -1;
+                found=index+offset;
+            }
+            return found;
+        };
+        // A handful of unambiguous words around each paragraph is enough for
+        // layout. Avoid a full edit-distance matrix on the audio-end UI frame.
+        let previousWord=0;
+        for(let index=1;index<original.length;index++){
+            const prior=original[index-1];
+            if(!/\n/.test(preview.slice(prior.index+prior[0].length,original[index].index)))continue;
+            const before=Math.max(0,index-3),after=Math.min(original.length,index+3);
+            let at=uniqueAnchor(before,after,index-before);
+            for(let count=6;at<0&&count>=2;count--)at=uniqueAnchor(index,Math.min(original.length,index+count),0);
+            for(let count=6;at<0&&count>=2;count--){const start=Math.max(0,index-count);at=uniqueAnchor(start,index,index-start);}
+            if(at>previousWord && at<words.length){breaks.push(words[at].index);previousWord=at;}
+        }
         let result="",start=0;
         for(const end of breaks){result+=text.slice(start,end).trimEnd()+"\n\n";start=end;}
         return result+text.slice(start);
