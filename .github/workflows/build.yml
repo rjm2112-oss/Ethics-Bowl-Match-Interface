@@ -22,17 +22,17 @@ jobs:
             platform: win
             arch: x64
             command: npm run dist:win -- --x64
-            artifact_name: windows-x64-build
+            artifact_name: Windows-Installer
           - os: macos-latest
             platform: mac
             arch: x64
             command: npm run dist:mac -- --x64
-            artifact_name: macos-x64-build
+            artifact_name: Mac-Intel
           - os: macos-latest
             platform: mac
             arch: arm64
             command: npm run dist:mac -- --arm64
-            artifact_name: macos-arm64-build
+            artifact_name: Mac-Apple-Silicon
 
     runs-on: ${{ matrix.os }}
     env:
@@ -60,13 +60,28 @@ jobs:
       - name: Verify packaged source and artifacts
         run: node scripts/verify-package.cjs dist ${{ matrix.platform }} ${{ matrix.arch }}
 
-      - name: Upload verified build artifacts
+      - name: Stage the verified installer
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const pkg = require('./package.json');
+          const report = JSON.parse(fs.readFileSync('dist/package-verification.json', 'utf8'));
+          if (!report.verified) throw new Error('Package verification is required.');
+          const installers = report.artifacts.filter(file => report.platform === 'win'
+            ? file.name.endsWith('-setup.exe') : file.name.endsWith('.dmg'));
+          if (installers.length !== 1) throw new Error('Exactly one installer is required.');
+          const chip = { x64: 'Intel', arm64: 'Apple Silicon' }[report.arch];
+          if (report.platform === 'mac' && !chip) throw new Error('Unknown Mac architecture.');
+          const name = report.platform === 'mac'
+            ? `${pkg.build.productName} ${pkg.version} - Mac ${chip}.dmg` : installers[0].name;
+          fs.mkdirSync('dist/installers');
+          fs.copyFileSync(`dist/${installers[0].name}`, `dist/installers/${name}`);
+          NODE
+
+      - name: Upload the verified installer
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
-          path: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.zip
-            dist/package-verification.json
+          path: dist/installers/*
           if-no-files-found: error
